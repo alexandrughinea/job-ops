@@ -2,7 +2,7 @@ import * as api from "@client/api";
 import { useSettings } from "@client/hooks/useSettings";
 import {
   formatCountryLabel,
-  getCompatibleSourcesForCountry,
+  getCompatibleSourcesForCountries,
 } from "@shared/location-support.js";
 import type { AppSettings, JobSource } from "@shared/types.js";
 import { useCallback, useEffect, useState } from "react";
@@ -157,13 +157,13 @@ export function usePipelineControls(
 
   const handleSaveAndRunAutomatic = useCallback(
     async (values: AutomaticRunValues) => {
-      const compatibleSources = getCompatibleSourcesForCountry(
+      const compatibleSources = getCompatibleSourcesForCountries(
         pipelineSources,
-        values.country,
+        values.countries,
       );
       if (compatibleSources.length === 0) {
         toast.error(
-          "No compatible sources for the selected country. Choose another country or source.",
+          "No compatible sources for the selected countries. Choose different countries or sources.",
         );
         return;
       }
@@ -184,17 +184,19 @@ export function usePipelineControls(
       const serializedCities = serializeCityLocationsSetting(
         values.cityLocations,
       );
+      const primaryCountry = values.countries[0] ?? "united kingdom";
       const searchCities =
         (hasJobSpySite || hasAdzuna || hasHiringCafe) && serializedCities
           ? serializedCities
-          : formatCountryLabel(values.country);
+          : formatCountryLabel(primaryCountry);
       await api.updateSettings({
         searchTerms: values.searchTerms,
         jobspyResultsWanted: limits.jobspyResultsWanted,
         gradcrackerMaxJobsPerTerm: limits.gradcrackerMaxJobsPerTerm,
         ukvisajobsMaxJobs: limits.ukvisajobsMaxJobs,
         adzunaMaxJobsPerTerm: limits.adzunaMaxJobsPerTerm,
-        jobspyCountryIndeed: values.country,
+        jobspyCountryIndeed: primaryCountry,
+        jobspyCountries: values.countries,
         searchCities,
       });
       await refreshSettings();
@@ -204,7 +206,7 @@ export function usePipelineControls(
         sources: compatibleSources,
         analytics: {
           mode: "automatic",
-          country: values.country,
+          country: values.countries.join(","),
           hasCityLocations: values.cityLocations.length > 0,
           searchTermsCount: values.searchTerms.length,
         },

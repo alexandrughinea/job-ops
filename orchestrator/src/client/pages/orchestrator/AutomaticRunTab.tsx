@@ -1,7 +1,8 @@
 import { EXTRACTOR_SOURCE_METADATA } from "@shared/extractors";
 import {
+  COUNTRY_SHORTCUT_SETS,
   formatCountryLabel,
-  isSourceAllowedForCountry,
+  isSourceAllowedForAnyCountry,
   normalizeCountryKey,
   SUPPORTED_COUNTRY_KEYS,
 } from "@shared/location-support.js";
@@ -19,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SearchableDropdown } from "@/components/ui/searchable-dropdown";
+import { MultiSearchableDropdown } from "@/components/ui/multi-searchable-dropdown";
 import { Separator } from "@/components/ui/separator";
 import {
   Tooltip,
@@ -58,7 +59,7 @@ const DEFAULT_VALUES: AutomaticRunValues = {
   minSuitabilityScore: 50,
   searchTerms: ["web developer"],
   runBudget: 200,
-  country: "united kingdom",
+  countries: ["united kingdom"],
   cityLocations: [],
 };
 
@@ -66,7 +67,7 @@ interface AutomaticRunFormValues {
   topN: string;
   minSuitabilityScore: string;
   runBudget: string;
-  country: string;
+  countries: string[];
   cityLocations: string[];
   cityLocationDraft: string;
   searchTerms: string[];
@@ -76,7 +77,7 @@ interface AutomaticRunFormValues {
 type AutomaticPresetSelection = AutomaticPresetId | "custom";
 
 const GLASSDOOR_COUNTRY_REASON =
-  "Glassdoor is not available for the selected country.";
+  "Glassdoor is not available for any of the selected countries.";
 const GLASSDOOR_LOCATION_REASON =
   "Add at least one city in Advanced settings to enable Glassdoor.";
 const HIDDEN_COUNTRY_KEYS = new Set(["usa/ca"]);
@@ -97,9 +98,9 @@ function getSourceDisabledReason(
       : GLASSDOOR_COUNTRY_REASON;
   }
   if (EXTRACTOR_SOURCE_METADATA[source]?.ukOnly) {
-    return `${sourceLabel[source]} is available only when country is United Kingdom.`;
+    return `${sourceLabel[source]} is available only when United Kingdom is selected.`;
   }
-  return `${sourceLabel[source]} is not available for the selected country.`;
+  return `${sourceLabel[source]} is not available for any of the selected countries.`;
 }
 
 function toNumber(input: string, min: number, max: number, fallback: number) {
@@ -156,7 +157,7 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
       topN: String(DEFAULT_VALUES.topN),
       minSuitabilityScore: String(DEFAULT_VALUES.minSuitabilityScore),
       runBudget: String(DEFAULT_VALUES.runBudget),
-      country: DEFAULT_VALUES.country,
+      countries: DEFAULT_VALUES.countries,
       cityLocations: [],
       cityLocationDraft: "",
       searchTerms: DEFAULT_VALUES.searchTerms,
@@ -167,7 +168,7 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
   const topNInput = watch("topN");
   const minScoreInput = watch("minSuitabilityScore");
   const runBudgetInput = watch("runBudget");
-  const countryInput = watch("country");
+  const countriesInput = watch("countries");
   const cityLocations = watch("cityLocations");
   const cityLocationDraft = watch("cityLocationDraft");
   const searchTerms = watch("searchTerms");
@@ -186,37 +187,59 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
       settings?.gradcrackerMaxJobsPerTerm?.value ??
       settings?.ukvisajobsMaxJobs?.value ??
       DEFAULT_VALUES.runBudget;
+
     const hasExplicitLocationOverride = Boolean(
       settings?.jobspyCountryIndeed?.override ||
-        settings?.searchCities?.override,
+        settings?.searchCities?.override ||
+        settings?.jobspyCountries?.override,
     );
     const defaultLocationCountry = !hasExplicitLocationOverride
       ? getDetectedCountryKey()
       : null;
-    const rememberedCountry = normalizeUiCountryKey(
-      hasExplicitLocationOverride
-        ? (settings?.jobspyCountryIndeed?.value ??
-            settings?.searchCities?.value ??
-            DEFAULT_VALUES.country)
-        : (defaultLocationCountry ??
-            settings?.jobspyCountryIndeed?.value ??
-            settings?.searchCities?.value ??
-            DEFAULT_VALUES.country),
-    );
-    const rememberedCountryKey = rememberedCountry || DEFAULT_VALUES.country;
+
+    // Prefer the multi-country setting; fall back to single-country
+    const savedCountries = settings?.jobspyCountries?.value;
+    let rememberedCountries: string[];
+    if (savedCountries && savedCountries.length > 0) {
+      rememberedCountries = savedCountries
+        .map((c) => normalizeUiCountryKey(c))
+        .filter(Boolean);
+    } else {
+      const singleCountry = normalizeUiCountryKey(
+        hasExplicitLocationOverride
+          ? (settings?.jobspyCountryIndeed?.value ??
+              settings?.searchCities?.value ??
+              DEFAULT_VALUES.countries[0])
+          : (defaultLocationCountry ??
+              settings?.jobspyCountryIndeed?.value ??
+              settings?.searchCities?.value ??
+              DEFAULT_VALUES.countries[0]),
+      );
+      rememberedCountries = [singleCountry || DEFAULT_VALUES.countries[0]];
+    }
+    if (
+      defaultLocationCountry &&
+      !hasExplicitLocationOverride &&
+      rememberedCountries.length === 1
+    ) {
+      const normalized = normalizeUiCountryKey(defaultLocationCountry);
+      if (normalized) rememberedCountries = [normalized];
+    }
+
     const rememberedLocations = parseCityLocationsSetting(
       settings?.searchCities?.value,
     ).filter(
       (location) =>
-        normalizeCountryKey(location) !==
-        normalizeCountryKey(rememberedCountryKey),
+        !rememberedCountries.some(
+          (c) => normalizeCountryKey(location) === normalizeCountryKey(c),
+        ),
     );
 
     reset({
       topN: String(topN),
       minSuitabilityScore: String(minSuitabilityScore),
       runBudget: String(rememberedRunBudget),
-      country: rememberedCountry || DEFAULT_VALUES.country,
+      countries: rememberedCountries,
       cityLocations: rememberedLocations,
       cityLocationDraft: "",
       searchTerms: settings?.searchTerms?.value ?? DEFAULT_VALUES.searchTerms,
@@ -226,7 +249,9 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
   }, [open, settings, reset]);
 
   const values = useMemo<AutomaticRunValues>(() => {
-    const normalizedCountry = normalizeUiCountryKey(countryInput);
+    const normalizedCountries = countriesInput
+      .map((c) => normalizeUiCountryKey(c))
+      .filter(Boolean);
     return {
       topN: toNumber(topNInput, 1, 50, DEFAULT_VALUES.topN),
       minSuitabilityScore: toNumber(
@@ -236,7 +261,10 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
         DEFAULT_VALUES.minSuitabilityScore,
       ),
       runBudget: toNumber(runBudgetInput, 1, 1000, DEFAULT_VALUES.runBudget),
-      country: normalizedCountry || DEFAULT_VALUES.country,
+      countries:
+        normalizedCountries.length > 0
+          ? normalizedCountries
+          : DEFAULT_VALUES.countries,
       cityLocations,
       searchTerms,
     };
@@ -244,19 +272,19 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
     topNInput,
     minScoreInput,
     runBudgetInput,
-    countryInput,
+    countriesInput,
     cityLocations,
     searchTerms,
   ]);
 
   const isSourceAvailableForRun = useCallback(
     (source: JobSource) => {
-      if (!isSourceAllowedForCountry(source, values.country)) return false;
+      if (!isSourceAllowedForAnyCountry(source, values.countries)) return false;
       if (source === "glassdoor" && values.cityLocations.length === 0)
         return false;
       return true;
     },
-    [values.country, values.cityLocations.length],
+    [values.countries, values.cityLocations.length],
   );
 
   const compatibleEnabledSources = useMemo(
@@ -383,22 +411,59 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
               </div>
             </div>
 
-            <div className="grid items-center gap-3 md:grid-cols-[120px_1fr]">
-              <Label className="text-base font-semibold">Country</Label>
-              <SearchableDropdown
-                value={values.country}
-                options={countryOptions}
-                onValueChange={(country) =>
-                  setValue("country", country, {
-                    shouldDirty: true,
-                  })
-                }
-                placeholder="Select country"
-                searchPlaceholder="Search country..."
-                emptyText="No matching countries."
-                triggerClassName="h-9 w-full md:max-w-xs"
-                ariaLabel={formatCountryLabel(values.country)}
-              />
+            <div className="grid items-start gap-3 md:grid-cols-[120px_1fr]">
+              <Label className="pt-2 text-base font-semibold">
+                {values.countries.length === 1 ? "Country" : "Countries"}
+              </Label>
+              <div className="flex flex-col gap-2">
+                <MultiSearchableDropdown
+                  values={values.countries}
+                  options={countryOptions}
+                  onValuesChange={(countries) =>
+                    setValue(
+                      "countries",
+                      countries.length > 0
+                        ? countries
+                        : DEFAULT_VALUES.countries,
+                      { shouldDirty: true },
+                    )
+                  }
+                  placeholder="Select countries"
+                  searchPlaceholder="Search country..."
+                  emptyText="No matching countries."
+                  triggerClassName="w-full md:max-w-sm"
+                  maxSelected={10}
+                  ariaLabel={
+                    values.countries.map(formatCountryLabel).join(", ") ||
+                    "Select countries"
+                  }
+                />
+                <div className="flex flex-wrap items-center gap-1">
+                  {COUNTRY_SHORTCUT_SETS.map((shortcut) => {
+                    const active =
+                      shortcut.countries.length === values.countries.length &&
+                      shortcut.countries.every((c) =>
+                        values.countries.includes(c),
+                      );
+                    return (
+                      <Button
+                        key={shortcut.id}
+                        type="button"
+                        size="sm"
+                        variant={active ? "secondary" : "ghost"}
+                        className="h-6 rounded-full px-2.5 text-xs"
+                        onClick={() =>
+                          setValue("countries", shortcut.countries, {
+                            shouldDirty: true,
+                          })
+                        }
+                      >
+                        {shortcut.label}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
             <Separator />
             <Accordion
@@ -510,9 +575,9 @@ export const AutomaticRunTab: React.FC<AutomaticRunTabProps> = ({
           <CardContent className="flex flex-wrap gap-2">
             <TooltipProvider>
               {enabledSources.map((source) => {
-                const countryAllowed = isSourceAllowedForCountry(
+                const countryAllowed = isSourceAllowedForAnyCountry(
                   source,
-                  values.country,
+                  values.countries,
                 );
                 const allowed = isSourceAvailableForRun(source);
                 const selected = compatiblePipelineSources.includes(source);

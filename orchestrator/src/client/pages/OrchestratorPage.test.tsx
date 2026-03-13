@@ -59,7 +59,7 @@ let mockAutomaticRunValues: AutomaticRunValues = {
   minSuitabilityScore: 55,
   searchTerms: ["backend"],
   runBudget: 150,
-  country: "united kingdom",
+  countries: ["united kingdom"],
   cityLocations: [],
 };
 
@@ -381,7 +381,7 @@ describe("OrchestratorPage", () => {
       minSuitabilityScore: 55,
       searchTerms: ["backend"],
       runBudget: 150,
-      country: "united kingdom",
+      countries: ["united kingdom"],
       cityLocations: [],
     };
   });
@@ -721,7 +721,7 @@ describe("OrchestratorPage", () => {
       minSuitabilityScore: 55,
       searchTerms: ["backend"],
       runBudget: 150,
-      country: "united kingdom",
+      countries: ["united kingdom"],
       cityLocations: ["London", "Manchester"],
     };
 
@@ -755,7 +755,7 @@ describe("OrchestratorPage", () => {
       minSuitabilityScore: 55,
       searchTerms: ["backend"],
       runBudget: 150,
-      country: "united kingdom",
+      countries: ["united kingdom"],
       cityLocations: ["Leeds", "Manchester"],
     };
 
@@ -789,7 +789,7 @@ describe("OrchestratorPage", () => {
       minSuitabilityScore: 55,
       searchTerms: ["backend"],
       runBudget: 150,
-      country: "united kingdom",
+      countries: ["united kingdom"],
       cityLocations: ["Leeds", "Manchester"],
     };
 
@@ -895,7 +895,7 @@ describe("OrchestratorPage", () => {
       minSuitabilityScore: 55,
       searchTerms: ["backend"],
       runBudget: 150,
-      country: "united states",
+      countries: ["united states"],
       cityLocations: [],
     };
 

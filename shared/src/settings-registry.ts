@@ -243,6 +243,16 @@ export const settingsRegistry = {
     serialize: (value: string | null | undefined): string | null =>
       value ?? null,
   },
+  jobspyCountries: {
+    kind: "typed" as const,
+    schema: z.array(z.string().trim().min(1).max(100)).min(1).max(20),
+    default: (): string[] =>
+      typeof process !== "undefined"
+        ? [process.env.JOBSPY_COUNTRY_INDEED || "UK"]
+        : ["UK"],
+    parse: parseJsonArrayOrNull,
+    serialize: serializeNullableJsonArray,
+  },
   showSponsorInfo: {
     kind: "typed" as const,
     schema: z.boolean(),
@@ -447,6 +457,27 @@ export const settingsRegistry = {
     kind: "secret" as const,
     envKey: "WEBHOOK_SECRET",
     schema: z.string().trim().max(2000),
+  },
+
+  profileSourceMode: {
+    kind: "typed" as const,
+    schema: z.enum(["rxresume", "raw_text"]),
+    default: (): "rxresume" | "raw_text" => "rxresume",
+    parse: (raw: string | undefined): "rxresume" | "raw_text" | null => {
+      if (!raw) return null;
+      return raw === "rxresume" || raw === "raw_text" ? raw : null;
+    },
+    serialize: (
+      value: "rxresume" | "raw_text" | null | undefined,
+    ): string | null => value ?? null,
+  },
+  rawResumeText: {
+    kind: "typed" as const,
+    schema: z.string().trim().max(100000),
+    default: (): string => "",
+    parse: parseNonEmptyStringOrNull,
+    serialize: (value: string | null | undefined): string | null =>
+      value ?? null,
   },
 
   // --- Aliases ---

@@ -8,6 +8,7 @@ import {
   formatCountryLabel,
   isSourceAllowedForCountry,
   normalizeCountryKey,
+  parseJobspyCountries,
 } from "@shared/location-support.js";
 import { normalizeStringArray } from "@shared/normalize-string-array.js";
 import {
@@ -106,15 +107,21 @@ export async function discoverJobsStep(args: {
       .filter(Boolean);
   }
 
-  const selectedCountry = normalizeCountryKey(
-    settings.jobspyCountryIndeed ??
-      settings.searchCities ??
-      settings.jobspyLocation ??
-      "united kingdom",
-  );
-  const compatibleSources = args.mergedConfig.sources.filter((source) =>
-    isSourceAllowedForCountry(source, selectedCountry),
-  );
+  const rawCountries = parseJobspyCountries(settings.jobspyCountries);
+  const selectedCountries =
+    rawCountries.length > 0
+      ? rawCountries
+      : [
+          normalizeCountryKey(
+            settings.jobspyCountryIndeed ??
+              settings.searchCities ??
+              settings.jobspyLocation ??
+              "united kingdom",
+          ),
+        ];
+
+  const selectedCountry = selectedCountries[0];
+
   let existingJobUrlsPromise: Promise<string[]> | null = null;
   const getExistingJobUrls = (): Promise<string[]> => {
     if (!existingJobUrlsPromise) {
@@ -122,119 +129,138 @@ export async function discoverJobsStep(args: {
     }
     return existingJobUrlsPromise;
   };
-  const skippedSources = args.mergedConfig.sources.filter(
-    (source) => !compatibleSources.includes(source),
-  );
 
-  if (skippedSources.length > 0) {
-    logger.info("Skipping incompatible sources for selected country", {
-      step: "discover-jobs",
-      country: selectedCountry,
-      countryLabel: formatCountryLabel(selectedCountry),
-      requestedSources: args.mergedConfig.sources,
-      skippedSources,
-    });
-  }
-
-  if (args.mergedConfig.sources.length > 0 && compatibleSources.length === 0) {
-    throw new Error(
-      `No compatible sources for selected country: ${formatCountryLabel(selectedCountry)}`,
-    );
-  }
-
-  const groupedByManifest = new Map<
-    string,
-    { sources: string[]; detail: string; termsTotal?: number }
-  >();
-
-  for (const source of compatibleSources) {
-    const manifest = registry.manifestBySource.get(source);
-    if (!manifest) {
-      sourceErrors.push(`${source}: extractor manifest not registered`);
-      continue;
-    }
-
-    const existing = groupedByManifest.get(manifest.id);
-    if (existing) {
-      existing.sources.push(source);
-      continue;
-    }
-
-    groupedByManifest.set(manifest.id, {
-      sources: [source],
-      termsTotal: searchTerms.length,
-      detail: `${manifest.displayName}: fetching jobs...`,
-    });
-  }
+  const filteredSettings = Object.fromEntries(
+    Object.entries(settings).filter(
+      ([, value]) => typeof value === "string" || typeof value === "undefined",
+    ),
+  ) as Record<string, string | undefined>;
 
   const sourceTasks: DiscoverySourceTask[] = [];
 
-  for (const [manifestId, grouped] of groupedByManifest) {
-    const manifest = registry.manifests.get(manifestId);
-    if (!manifest) continue;
+  for (const country of selectedCountries) {
+    const compatibleSources = args.mergedConfig.sources.filter((source) =>
+      isSourceAllowedForCountry(source, country),
+    );
+    const skippedSources = args.mergedConfig.sources.filter(
+      (source) => !compatibleSources.includes(source),
+    );
 
-    sourceTasks.push({
-      source: manifest.id,
-      termsTotal: grouped.termsTotal,
-      detail:
-        grouped.sources.length > 1
-          ? `${manifest.displayName}: ${grouped.sources.join(", ")}...`
-          : grouped.detail,
-      run: async () => {
-        const filteredSettings = Object.fromEntries(
-          Object.entries(settings).filter(
-            ([, value]) =>
-              typeof value === "string" || typeof value === "undefined",
-          ),
-        ) as Record<string, string | undefined>;
+    if (skippedSources.length > 0) {
+      logger.info("Skipping incompatible sources for selected country", {
+        step: "discover-jobs",
+        country,
+        countryLabel: formatCountryLabel(country),
+        requestedSources: args.mergedConfig.sources,
+        skippedSources,
+      });
+    }
 
-        const result = await manifest.run({
-          source: grouped.sources[0],
-          selectedSources: grouped.sources,
-          settings: filteredSettings,
-          searchTerms,
-          selectedCountry,
-          getExistingJobUrls,
-          shouldCancel: args.shouldCancel,
-          onProgress: (event) => {
-            progressHelpers.crawlingUpdate({
-              source: manifest.id,
-              termsProcessed: event.termsProcessed,
-              termsTotal: event.termsTotal,
-              listPagesProcessed: event.listPagesProcessed,
-              listPagesTotal: event.listPagesTotal,
-              jobCardsFound: event.jobCardsFound,
-              jobPagesEnqueued: event.jobPagesEnqueued,
-              jobPagesSkipped: event.jobPagesSkipped,
-              jobPagesProcessed: event.jobPagesProcessed,
-              phase: event.phase,
-              currentUrl: event.currentUrl,
-            });
+    if (
+      args.mergedConfig.sources.length > 0 &&
+      compatibleSources.length === 0
+    ) {
+      logger.info("No compatible sources for country — skipping", {
+        step: "discover-jobs",
+        country,
+        countryLabel: formatCountryLabel(country),
+      });
+      continue;
+    }
 
-            if (event.detail) {
-              updateProgress({
-                step: "crawling",
-                detail: event.detail,
+    const groupedByManifest = new Map<
+      string,
+      { sources: string[]; detail: string; termsTotal?: number }
+    >();
+
+    for (const source of compatibleSources) {
+      const manifest = registry.manifestBySource.get(source);
+      if (!manifest) {
+        sourceErrors.push(`${source}: extractor manifest not registered`);
+        continue;
+      }
+
+      const existing = groupedByManifest.get(manifest.id);
+      if (existing) {
+        existing.sources.push(source);
+        continue;
+      }
+
+      groupedByManifest.set(manifest.id, {
+        sources: [source],
+        termsTotal: searchTerms.length,
+        detail: `${manifest.displayName}: fetching jobs (${formatCountryLabel(country)})...`,
+      });
+    }
+
+    for (const [manifestId, grouped] of groupedByManifest) {
+      const manifest = registry.manifests.get(manifestId);
+      if (!manifest) continue;
+
+      const taskCountry = country;
+      sourceTasks.push({
+        source: manifest.id,
+        termsTotal: grouped.termsTotal,
+        detail:
+          grouped.sources.length > 1
+            ? `${manifest.displayName} (${formatCountryLabel(taskCountry)}): ${grouped.sources.join(", ")}...`
+            : grouped.detail,
+        run: async () => {
+          const result = await manifest.run({
+            source: grouped.sources[0],
+            selectedSources: grouped.sources,
+            settings: filteredSettings,
+            searchTerms,
+            selectedCountry: taskCountry,
+            getExistingJobUrls,
+            shouldCancel: args.shouldCancel,
+            onProgress: (event) => {
+              progressHelpers.crawlingUpdate({
+                source: manifest.id,
+                termsProcessed: event.termsProcessed,
+                termsTotal: event.termsTotal,
+                listPagesProcessed: event.listPagesProcessed,
+                listPagesTotal: event.listPagesTotal,
+                jobCardsFound: event.jobCardsFound,
+                jobPagesEnqueued: event.jobPagesEnqueued,
+                jobPagesSkipped: event.jobPagesSkipped,
+                jobPagesProcessed: event.jobPagesProcessed,
+                phase: event.phase,
+                currentUrl: event.currentUrl,
               });
-            }
-          },
-        });
 
-        if (!result.success) {
+              if (event.detail) {
+                updateProgress({
+                  step: "crawling",
+                  detail: event.detail,
+                });
+              }
+            },
+          });
+
+          if (!result.success) {
+            return {
+              discoveredJobs: [],
+              sourceErrors: [
+                `${manifest.displayName || manifest.id} (${formatCountryLabel(taskCountry)}): ${result.error ?? "unknown error"} (sources: ${grouped.sources.join(",")})`,
+              ],
+            };
+          }
+
           return {
-            discoveredJobs: [],
-            sourceErrors: [
-              `${manifest.displayName || manifest.id}: ${result.error ?? "unknown error"} (sources: ${grouped.sources.join(",")})`,
-            ],
+            discoveredJobs: result.jobs,
+            sourceErrors: [],
           };
-        }
+        },
+      });
+    }
+  }
 
-        return {
-          discoveredJobs: result.jobs,
-          sourceErrors: [],
-        };
-      },
-    });
+  if (args.mergedConfig.sources.length > 0 && sourceTasks.length === 0) {
+    const countryLabels = selectedCountries.map(formatCountryLabel).join(", ");
+    throw new Error(
+      `No compatible sources for selected ${selectedCountries.length === 1 ? "country" : "countries"}: ${countryLabels}`,
+    );
   }
 
   const totalSources = sourceTasks.length;

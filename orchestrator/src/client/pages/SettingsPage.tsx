@@ -16,6 +16,7 @@ import { DangerZoneSection } from "@client/pages/settings/components/DangerZoneS
 import { DisplaySettingsSection } from "@client/pages/settings/components/DisplaySettingsSection";
 import { EnvironmentSettingsSection } from "@client/pages/settings/components/EnvironmentSettingsSection";
 import { ModelSettingsSection } from "@client/pages/settings/components/ModelSettingsSection";
+import { ProfileSourceSection } from "@client/pages/settings/components/ProfileSourceSection";
 import { ReactiveResumeSection } from "@client/pages/settings/components/ReactiveResumeSection";
 import { ScoringSettingsSection } from "@client/pages/settings/components/ScoringSettingsSection";
 import { TracerLinksSettingsSection } from "@client/pages/settings/components/TracerLinksSettingsSection";
@@ -83,6 +84,7 @@ const DEFAULT_FORM_VALUES: UpdateSettingsInput = {
   adzunaAppKey: "",
   webhookSecret: "",
   enableBasicAuth: false,
+  profileSourceMode: null,
   backupEnabled: null,
   backupHour: null,
   backupMaxCount: null,
@@ -139,6 +141,7 @@ const NULL_SETTINGS_PAYLOAD: UpdateSettingsInput = {
   adzunaMaxJobsPerTerm: null,
   webhookSecret: null,
   enableBasicAuth: undefined,
+  profileSourceMode: null,
   backupEnabled: null,
   backupHour: null,
   backupMaxCount: null,
@@ -178,6 +181,7 @@ const mapSettingsToForm = (data: AppSettings): UpdateSettingsInput => ({
   adzunaAppKey: "",
   webhookSecret: "",
   enableBasicAuth: data.basicAuthActive,
+  profileSourceMode: data.profileSourceMode.override,
   backupEnabled: data.backupEnabled.override,
   backupHour: data.backupHour.override,
   backupMaxCount: data.backupMaxCount.override,
@@ -952,6 +956,16 @@ export const SettingsPage: React.FC = () => {
             pipelineWebhook={pipelineWebhook}
             jobCompleteWebhook={jobCompleteWebhook}
             webhookSecretHint={envSettings.private.webhookSecretHint}
+            isLoading={isLoading}
+            isSaving={isSaving}
+          />
+          <ProfileSourceSection
+            currentMode={
+              (settings?.profileSourceMode?.value ?? "rxresume") as
+                | "rxresume"
+                | "raw_text"
+            }
+            rawResumeCharCount={settings?.rawResumeCharCount ?? 0}
             isLoading={isLoading}
             isSaving={isSaving}
           />

@@ -130,6 +130,16 @@ export async function getEffectiveSettings(): Promise<AppSettings> {
         continue;
       }
 
+      // rawResumeText can be very large — emit only a char count to keep the
+      // settings response lean. The full text is served by GET /api/profile/raw-text.
+      if (key === "rawResumeText") {
+        const text = (override ?? defaultValue ?? "") as string;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // biome-ignore lint/suspicious/noExplicitAny: dynamic assignment for settings building
+        (result as any).rawResumeCharCount = text.length;
+        continue;
+      }
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       // biome-ignore lint/suspicious/noExplicitAny: dynamic assignment for settings building
       (result as any)[key] = {

@@ -85,7 +85,7 @@ describe("discoverJobsStep", () => {
 
     expect(result.discoveredJobs).toHaveLength(1);
     expect(result.sourceErrors).toEqual([
-      "UK Visa Jobs: login failed (sources: ukvisajobs)",
+      "UK Visa Jobs (United Kingdom): login failed (sources: ukvisajobs)",
     ]);
     expect(jobspyManifest.run).toHaveBeenCalledWith(
       expect.objectContaining({ selectedSources: ["indeed", "linkedin"] }),
@@ -125,7 +125,7 @@ describe("discoverJobsStep", () => {
         },
       }),
     ).rejects.toThrow(
-      "All sources failed: UK Visa Jobs: boom (sources: ukvisajobs)",
+      "All sources failed: UK Visa Jobs (United Kingdom): boom (sources: ukvisajobs)",
     );
   });
 

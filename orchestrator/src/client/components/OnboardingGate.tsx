@@ -21,7 +21,7 @@ import type { UpdateSettingsInput } from "@shared/settings-schema.js";
 import type { RxResumeMode, ValidationResult } from "@shared/types.js";
 import { Check } from "lucide-react";
 import type React from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import {
@@ -47,16 +47,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 type ValidationState = ValidationResult & { checked: boolean };
 type TimestampedValidationState = ValidationState & { testedAt: number | null };
 
+type ProfileSourceMode = "rxresume" | "raw_text";
+
 type OnboardingFormData = {
   llmProvider: string;
   llmBaseUrl: string;
   llmApiKey: string;
+  profileSourceMode: ProfileSourceMode;
   rxresumeMode: RxResumeMode;
   rxresumeEmail: string;
   rxresumePassword: string;
@@ -77,15 +82,22 @@ const EMPTY_TIMESTAMPED_VALIDATION_STATE: TimestampedValidationState = {
 
 function getStepPrimaryLabel(input: {
   currentStep: string | null;
+  profileSourceMode: ProfileSourceMode;
   llmValidated: boolean;
   rxresumeValidated: boolean;
   baseResumeValidated: boolean;
+  rawTextValidated: boolean;
 }): string {
   const toLabel = (isValidated: boolean): string =>
     isValidated ? "Revalidate" : "Validate";
 
   if (input.currentStep === "llm") return toLabel(input.llmValidated);
-  if (input.currentStep === "rxresume") return toLabel(input.rxresumeValidated);
+  if (input.currentStep === "resume") {
+    if (input.profileSourceMode === "raw_text") {
+      return input.rawTextValidated ? "Re-save Text" : "Save Text";
+    }
+    return toLabel(input.rxresumeValidated);
+  }
   if (input.currentStep === "baseresume")
     return toLabel(input.baseResumeValidated);
   return "Validate";
@@ -104,10 +116,14 @@ export const OnboardingGate: React.FC = () => {
     syncBaseResumeIdsForMode,
   } = useRxResumeConfigState(settings);
 
+  const [wizardDone, setWizardDone] = useState(false);
   const [isSavingEnv, setIsSavingEnv] = useState(false);
   const [isValidatingLlm, setIsValidatingLlm] = useState(false);
   const [isValidatingRxresume, setIsValidatingRxresume] = useState(false);
   const [isValidatingBaseResume, setIsValidatingBaseResume] = useState(false);
+  const [isSavingRawText, setIsSavingRawText] = useState(false);
+  const [isUploadingPdf, setIsUploadingPdf] = useState(false);
+  const [rawTextDraft, setRawTextDraft] = useState<string>("");
   const [llmValidation, setLlmValidation] = useState<ValidationState>(
     EMPTY_VALIDATION_STATE,
   );
@@ -123,7 +139,11 @@ export const OnboardingGate: React.FC = () => {
   });
   const [baseResumeValidation, setBaseResumeValidation] =
     useState<ValidationState>(EMPTY_VALIDATION_STATE);
+  const [rawTextValidation, setRawTextValidation] = useState<ValidationState>(
+    EMPTY_VALIDATION_STATE,
+  );
   const [currentStep, setCurrentStep] = useState<string | null>(null);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
   const demoInfo = useDemoInfo();
   const demoMode = demoInfo?.demoMode ?? false;
 
@@ -133,6 +153,7 @@ export const OnboardingGate: React.FC = () => {
         llmProvider: "",
         llmBaseUrl: "",
         llmApiKey: "",
+        profileSourceMode: "rxresume",
         rxresumeMode: "v5",
         rxresumeEmail: "",
         rxresumePassword: "",
@@ -142,6 +163,7 @@ export const OnboardingGate: React.FC = () => {
     });
 
   const llmProvider = watch("llmProvider");
+  const profileSourceModeValue = watch("profileSourceMode") ?? "rxresume";
 
   const validateLlm = useCallback(async () => {
     const values = getValues();
@@ -211,16 +233,27 @@ export const OnboardingGate: React.FC = () => {
   const rxresumeModeCurrent = (rxresumeModeValue ||
     settings?.rxresumeMode?.value ||
     "v5") as RxResumeMode;
-  const hasCheckedValidations =
-    (requiresLlmKey ? llmValidation.checked : true) &&
-    rxresumeValidation.checked &&
-    baseResumeValidation.checked;
   const llmValidated = requiresLlmKey ? llmValidation.valid : true;
+
+  const resumeStepChecked =
+    profileSourceModeValue === "raw_text"
+      ? rawTextValidation.checked
+      : rxresumeValidation.checked && baseResumeValidation.checked;
+
+  const profileSourceReady =
+    profileSourceModeValue === "raw_text"
+      ? rawTextValidation.valid
+      : rxresumeValidation.valid && baseResumeValidation.valid;
+
+  const hasCheckedValidations =
+    (requiresLlmKey ? llmValidation.checked : true) && resumeStepChecked;
+
   const shouldOpen =
+    !wizardDone &&
     !demoMode &&
     Boolean(settings && !settingsLoading) &&
     hasCheckedValidations &&
-    !(llmValidated && rxresumeValidation.valid && baseResumeValidation.valid);
+    !(llmValidated && profileSourceReady);
 
   const validateRxresumeVersion = useCallback(
     async (
@@ -281,16 +314,30 @@ export const OnboardingGate: React.FC = () => {
         hasV5: storedRxResume.hasV5,
       });
       const selectedId = syncBaseResumeIdsForMode(initialMode);
+      const savedSourceMode =
+        (settings.profileSourceMode?.value as ProfileSourceMode | undefined) ??
+        "rxresume";
       reset({
         llmProvider: settings.llmProvider?.value || "",
         llmBaseUrl: settings.llmBaseUrl?.value || "",
         llmApiKey: "",
+        profileSourceMode: savedSourceMode,
         rxresumeMode: initialMode,
         rxresumeEmail: "",
         rxresumePassword: "",
         rxresumeApiKey: "",
         rxresumeBaseResumeId: selectedId,
       });
+
+      // Seed raw text validation state from saved char count
+      if (savedSourceMode === "raw_text") {
+        const charCount = settings.rawResumeCharCount ?? 0;
+        setRawTextValidation({
+          valid: charCount > 0,
+          message: charCount > 0 ? null : "No resume text saved yet",
+          checked: true,
+        });
+      }
     }
   }, [
     settings,
@@ -313,8 +360,8 @@ export const OnboardingGate: React.FC = () => {
     setLlmValidation({ valid: false, message: null, checked: false });
   }, [selectedProvider]);
 
-  const steps = useMemo(
-    () => [
+  const steps = useMemo(() => {
+    const base = [
       {
         id: "llm",
         label: "LLM Provider",
@@ -323,22 +370,38 @@ export const OnboardingGate: React.FC = () => {
         disabled: false,
       },
       {
-        id: "rxresume",
-        label: "Connect Reactive Resume",
-        subtitle: "Version + credentials",
-        complete: rxresumeValidation.valid,
+        id: "resume",
+        label: "Resume Source",
+        subtitle:
+          profileSourceModeValue === "raw_text"
+            ? "Paste or upload PDF"
+            : "Version + credentials",
+        complete:
+          profileSourceModeValue === "raw_text"
+            ? rawTextValidation.valid
+            : rxresumeValidation.valid,
         disabled: false,
       },
-      {
+    ];
+
+    if (profileSourceModeValue !== "raw_text") {
+      base.push({
         id: "baseresume",
         label: "Select Template Resume",
         subtitle: "Template selection",
         complete: baseResumeValidation.valid,
         disabled: !rxresumeValidation.valid,
-      },
-    ],
-    [llmValidated, rxresumeValidation.valid, baseResumeValidation.valid],
-  );
+      });
+    }
+
+    return base;
+  }, [
+    llmValidated,
+    profileSourceModeValue,
+    rawTextValidation.valid,
+    rxresumeValidation.valid,
+    baseResumeValidation.valid,
+  ]);
 
   const defaultStep = steps.find((step) => !step.complete)?.id ?? steps[0]?.id;
 
@@ -357,7 +420,21 @@ export const OnboardingGate: React.FC = () => {
     } else {
       setLlmValidation({ valid: true, message: null, checked: true });
     }
-    validations.push(validateRxresume(), validateBaseResume());
+
+    const sourceMode =
+      (settings.profileSourceMode?.value as ProfileSourceMode | undefined) ??
+      "rxresume";
+
+    if (sourceMode === "raw_text") {
+      const charCount = settings.rawResumeCharCount ?? 0;
+      setRawTextValidation({
+        valid: charCount > 0,
+        message: charCount > 0 ? null : "No resume text saved yet",
+        checked: true,
+      });
+    } else {
+      validations.push(validateRxresume(), validateBaseResume());
+    }
 
     const results = await Promise.allSettled(validations);
 
@@ -381,9 +458,7 @@ export const OnboardingGate: React.FC = () => {
     if (demoMode) return;
     if (!settings || settingsLoading) return;
     const needsValidation =
-      (requiresLlmKey ? !llmValidation.checked : false) ||
-      !rxresumeValidation.checked ||
-      !baseResumeValidation.checked;
+      (requiresLlmKey ? !llmValidation.checked : false) || !resumeStepChecked;
     if (!needsValidation) return;
     void runAllValidations();
   }, [
@@ -391,8 +466,7 @@ export const OnboardingGate: React.FC = () => {
     settingsLoading,
     requiresLlmKey,
     llmValidation.checked,
-    rxresumeValidation.checked,
-    baseResumeValidation.checked,
+    resumeStepChecked,
     runAllValidations,
     demoMode,
   ]);
@@ -541,7 +615,8 @@ export const OnboardingGate: React.FC = () => {
       }
 
       await refreshSettings();
-      toast.success("Base resume set");
+      toast.success("Setup complete!");
+      setWizardDone(true);
       return true;
     } catch (error) {
       const message =
@@ -550,6 +625,59 @@ export const OnboardingGate: React.FC = () => {
       return false;
     } finally {
       setIsSavingEnv(false);
+    }
+  };
+
+  const handleSaveRawText = async (): Promise<boolean> => {
+    if (!rawTextDraft.trim()) {
+      toast.info("Paste your resume text or upload a PDF to continue");
+      return false;
+    }
+
+    try {
+      setIsSavingRawText(true);
+      // Server atomically saves rawResumeText + profileSourceMode = "raw_text"
+      const { charCount } = await api.setRawResumeText(rawTextDraft);
+      setRawTextValidation({ valid: true, message: null, checked: true });
+      toast.success("Resume saved — setup complete!", {
+        description: `${charCount.toLocaleString()} characters stored`,
+      });
+      // Explicit close: don't rely solely on reactive shouldOpen
+      setWizardDone(true);
+      void refreshSettings();
+      return true;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to save resume text";
+      toast.error(message);
+      return false;
+    } finally {
+      setIsSavingRawText(false);
+    }
+  };
+
+  const handlePdfUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    if (pdfInputRef.current) pdfInputRef.current.value = "";
+    if (!file) return;
+
+    try {
+      setIsUploadingPdf(true);
+      const buffer = await file.arrayBuffer();
+      await api.uploadResumePdf(buffer);
+      const { text } = await api.getRawResumeText();
+      setRawTextDraft(text);
+      toast.success("PDF extracted", {
+        description: "Text loaded into the editor. Save it to confirm.",
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to process PDF";
+      toast.error(message);
+    } finally {
+      setIsUploadingPdf(false);
     }
   };
 
@@ -565,17 +693,27 @@ export const OnboardingGate: React.FC = () => {
     settingsLoading ||
     isValidatingLlm ||
     isValidatingRxresume ||
-    isValidatingBaseResume;
+    isValidatingBaseResume ||
+    isSavingRawText ||
+    isUploadingPdf;
   const canGoBack = stepIndex > 0;
 
   const handlePrimaryAction = async () => {
     if (!currentStep) return;
+    const nextStep = steps[stepIndex + 1];
     if (currentStep === "llm") {
-      await handleSaveLlm();
+      const saved = await handleSaveLlm();
+      if (saved && nextStep) setCurrentStep(nextStep.id);
       return;
     }
-    if (currentStep === "rxresume") {
-      await handleSaveRxresume();
+    if (currentStep === "resume") {
+      if (profileSourceModeValue === "raw_text") {
+        const saved = await handleSaveRawText();
+        if (saved && nextStep) setCurrentStep(nextStep.id);
+      } else {
+        const saved = await handleSaveRxresume();
+        if (saved && nextStep) setCurrentStep(nextStep.id);
+      }
       return;
     }
     if (currentStep === "baseresume") {
@@ -743,40 +881,163 @@ export const OnboardingGate: React.FC = () => {
               </div>
             </TabsContent>
 
-            <TabsContent value="rxresume" className="space-y-4 pt-6">
-              <ReactiveResumeConfigPanel
-                mode={rxresumeModeCurrent}
-                onModeChange={(mode) => {
-                  setValue("rxresumeMode", mode);
-                  setValue(
-                    "rxresumeBaseResumeId",
-                    getBaseResumeIdForMode(mode),
-                  );
-                  setRxresumeValidation((previous) => ({
-                    ...EMPTY_VALIDATION_STATE,
-                    checked: previous.checked,
-                  }));
-                }}
-                disabled={isSavingEnv}
-                showValidationStatus
-                validationStatuses={rxresumeVersionValidations}
-                intro={{
-                  title: "Link your RxResume account",
-                  description:
-                    "Used to export tailored PDFs. Choose between Reactive Resume version 4 and 5, and provide the credentials.",
-                }}
-                v5={{
-                  apiKey: watch("rxresumeApiKey"),
-                  onApiKeyChange: (value) => setValue("rxresumeApiKey", value),
-                }}
-                v4={{
-                  email: watch("rxresumeEmail"),
-                  onEmailChange: (value) => setValue("rxresumeEmail", value),
-                  password: watch("rxresumePassword"),
-                  onPasswordChange: (value) =>
-                    setValue("rxresumePassword", value),
-                }}
-              />
+            <TabsContent value="resume" className="space-y-4 pt-6">
+              {/* Source picker */}
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-semibold">
+                    Choose your profile source
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    How the pipeline reads your profile for scoring and
+                    tailoring.
+                  </p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setValue("profileSourceMode", "rxresume");
+                      if (!rxresumeValidation.checked) {
+                        setRxresumeValidation({
+                          valid: false,
+                          message: null,
+                          checked: true,
+                        });
+                      }
+                      if (!baseResumeValidation.checked) {
+                        setBaseResumeValidation({
+                          valid: false,
+                          message: null,
+                          checked: true,
+                        });
+                      }
+                    }}
+                    className={cn(
+                      "rounded-md border p-3 text-left transition-colors hover:bg-muted/40",
+                      profileSourceModeValue === "rxresume"
+                        ? "border-primary bg-muted/40"
+                        : "border-border",
+                    )}
+                  >
+                    <p className="text-sm font-medium">Reactive Resume</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Full pipeline + tailored PDF export
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setValue("profileSourceMode", "raw_text");
+                      if (!rawTextValidation.checked) {
+                        const charCount = settings?.rawResumeCharCount ?? 0;
+                        setRawTextValidation({
+                          valid: charCount > 0,
+                          message:
+                            charCount > 0 ? null : "No resume text saved yet",
+                          checked: true,
+                        });
+                      }
+                    }}
+                    className={cn(
+                      "rounded-md border p-3 text-left transition-colors hover:bg-muted/40",
+                      profileSourceModeValue === "raw_text"
+                        ? "border-primary bg-muted/40"
+                        : "border-border",
+                    )}
+                  >
+                    <p className="text-sm font-medium">Plain text / PDF</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Paste resume or upload PDF. Scoring &amp; tailoring only.
+                    </p>
+                  </button>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* RxResume credentials panel */}
+              {profileSourceModeValue === "rxresume" && (
+                <ReactiveResumeConfigPanel
+                  mode={rxresumeModeCurrent}
+                  onModeChange={(mode) => {
+                    setValue("rxresumeMode", mode);
+                    setValue(
+                      "rxresumeBaseResumeId",
+                      getBaseResumeIdForMode(mode),
+                    );
+                    setRxresumeValidation((previous) => ({
+                      ...EMPTY_VALIDATION_STATE,
+                      checked: previous.checked,
+                    }));
+                  }}
+                  disabled={isSavingEnv}
+                  showValidationStatus
+                  validationStatuses={rxresumeVersionValidations}
+                  intro={{
+                    title: "Link your RxResume account",
+                    description:
+                      "Used to export tailored PDFs. Choose between Reactive Resume version 4 and 5, and provide the credentials.",
+                  }}
+                  v5={{
+                    apiKey: watch("rxresumeApiKey"),
+                    onApiKeyChange: (value) =>
+                      setValue("rxresumeApiKey", value),
+                  }}
+                  v4={{
+                    email: watch("rxresumeEmail"),
+                    onEmailChange: (value) => setValue("rxresumeEmail", value),
+                    password: watch("rxresumePassword"),
+                    onPasswordChange: (value) =>
+                      setValue("rxresumePassword", value),
+                  }}
+                />
+              )}
+
+              {/* Raw text / PDF panel */}
+              {profileSourceModeValue === "raw_text" && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label
+                      htmlFor="rawResumeText"
+                      className="text-sm font-medium"
+                    >
+                      Resume text
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        ref={pdfInputRef}
+                        type="file"
+                        accept="application/pdf"
+                        className="hidden"
+                        onChange={handlePdfUpload}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={isBusy}
+                        onClick={() => pdfInputRef.current?.click()}
+                      >
+                        {isUploadingPdf ? "Extracting…" : "Upload PDF"}
+                      </Button>
+                    </div>
+                  </div>
+                  <Textarea
+                    id="rawResumeText"
+                    placeholder="Paste your resume here…"
+                    className="min-h-[200px] font-mono text-xs"
+                    value={rawTextDraft}
+                    onChange={(e) => setRawTextDraft(e.target.value)}
+                    disabled={isBusy}
+                  />
+                  {rawTextDraft.length > 0 && (
+                    <p className="text-xs text-muted-foreground text-right">
+                      {rawTextDraft.length.toLocaleString()} characters
+                    </p>
+                  )}
+                </div>
+              )}
             </TabsContent>
 
             <TabsContent value="baseresume" className="space-y-4 pt-6">
@@ -824,9 +1085,11 @@ export const OnboardingGate: React.FC = () => {
                   ? "Validating..."
                   : getStepPrimaryLabel({
                       currentStep,
+                      profileSourceMode: profileSourceModeValue,
                       llmValidated,
                       rxresumeValidated: rxresumeValidation.valid,
                       baseResumeValidated: baseResumeValidation.valid,
+                      rawTextValidated: rawTextValidation.valid,
                     })}
               </Button>
             </div>

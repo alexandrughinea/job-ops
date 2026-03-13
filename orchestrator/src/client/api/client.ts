@@ -1281,6 +1281,32 @@ export async function refreshProfile(): Promise<ResumeProfile> {
   });
 }
 
+export async function getRawResumeText(): Promise<{
+  text: string;
+  charCount: number;
+}> {
+  return fetchApi<{ text: string; charCount: number }>("/profile/raw-text");
+}
+
+export async function setRawResumeText(
+  text: string,
+): Promise<{ charCount: number }> {
+  return fetchApi<{ charCount: number }>("/profile/raw-text", {
+    method: "PUT",
+    body: JSON.stringify({ text }),
+  });
+}
+
+export async function uploadResumePdf(
+  fileBuffer: ArrayBuffer,
+): Promise<{ charCount: number }> {
+  return fetchApi<{ charCount: number }>("/profile/upload-pdf", {
+    method: "POST",
+    headers: { "Content-Type": "application/pdf" },
+    body: fileBuffer,
+  });
+}
+
 export async function validateLlm(input: {
   provider?: string;
   baseUrl?: string;

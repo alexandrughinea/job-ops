@@ -166,6 +166,131 @@ export const SUPPORTED_COUNTRY_KEYS = Array.from(
   ),
 ).filter(Boolean);
 
+export interface CountryShortcutSet {
+  id: string;
+  label: string;
+  countries: string[];
+}
+
+function toSupportedKeys(raw: string[]): string[] {
+  const supported = new Set(SUPPORTED_COUNTRY_KEYS);
+  return raw
+    .map((c) => normalizeCountryKey(c))
+    .filter((c) => c && supported.has(c));
+}
+
+export const COUNTRY_SHORTCUT_SETS: CountryShortcutSet[] = [
+  {
+    id: "eu",
+    label: "EU",
+    countries: toSupportedKeys([
+      "austria",
+      "belgium",
+      "bulgaria",
+      "croatia",
+      "cyprus",
+      "czechia",
+      "denmark",
+      "estonia",
+      "finland",
+      "france",
+      "germany",
+      "greece",
+      "hungary",
+      "ireland",
+      "italy",
+      "latvia",
+      "lithuania",
+      "luxembourg",
+      "malta",
+      "netherlands",
+      "poland",
+      "portugal",
+      "romania",
+      "slovakia",
+      "slovenia",
+      "spain",
+      "sweden",
+    ]),
+  },
+  {
+    id: "english-speaking",
+    label: "English Speaking",
+    countries: toSupportedKeys([
+      "united kingdom",
+      "united states",
+      "canada",
+      "australia",
+      "new zealand",
+      "ireland",
+      "south africa",
+    ]),
+  },
+  {
+    id: "apac",
+    label: "APAC",
+    countries: toSupportedKeys([
+      "australia",
+      "china",
+      "hong kong",
+      "india",
+      "indonesia",
+      "japan",
+      "malaysia",
+      "new zealand",
+      "philippines",
+      "singapore",
+      "south korea",
+      "taiwan",
+      "thailand",
+      "vietnam",
+    ]),
+  },
+  {
+    id: "latin-america",
+    label: "Latin America",
+    countries: toSupportedKeys([
+      "argentina",
+      "brazil",
+      "chile",
+      "colombia",
+      "costa rica",
+      "ecuador",
+      "mexico",
+      "panama",
+      "peru",
+      "uruguay",
+      "venezuela",
+    ]),
+  },
+  {
+    id: "middle-east",
+    label: "Middle East",
+    countries: toSupportedKeys([
+      "bahrain",
+      "egypt",
+      "israel",
+      "jordan",
+      "kuwait",
+      "oman",
+      "qatar",
+      "saudi arabia",
+      "turkey",
+      "united arab emirates",
+    ]),
+  },
+  {
+    id: "nordics",
+    label: "Nordics",
+    countries: toSupportedKeys(["denmark", "finland", "norway", "sweden"]),
+  },
+  {
+    id: "worldwide",
+    label: "Worldwide",
+    countries: toSupportedKeys(["worldwide"]),
+  },
+];
+
 export function isUkCountry(country: string | null | undefined): boolean {
   return normalizeCountryKey(country) === "united kingdom";
 }
@@ -197,4 +322,40 @@ export function getCompatibleSourcesForCountry(
   country: string | null | undefined,
 ): JobSource[] {
   return sources.filter((source) => isSourceAllowedForCountry(source, country));
+}
+
+export function isSourceAllowedForAnyCountry(
+  source: JobSource,
+  countries: string[],
+): boolean {
+  return countries.some((country) =>
+    isSourceAllowedForCountry(source, country),
+  );
+}
+
+export function getCompatibleSourcesForCountries(
+  sources: JobSource[],
+  countries: string[],
+): JobSource[] {
+  if (countries.length === 0) return [];
+  return sources.filter((source) =>
+    isSourceAllowedForAnyCountry(source, countries),
+  );
+}
+
+export function parseJobspyCountries(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .filter((v): v is string => typeof v === "string")
+        .map((v) => normalizeCountryKey(v))
+        .filter(Boolean);
+    }
+  } catch {
+    // not JSON — treat as single country
+  }
+  const normalized = normalizeCountryKey(raw);
+  return normalized ? [normalized] : [];
 }

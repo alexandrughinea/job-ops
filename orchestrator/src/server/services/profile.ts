@@ -1,65 +1,23 @@
-import { logger } from "@infra/logger";
 import type { ResumeProfile } from "@shared/types";
-import { getResume, RxResumeAuthConfigError } from "./rxresume";
-import { getConfiguredRxResumeBaseResumeId } from "./rxresume/baseResumeId";
+import {
+  clearAllProfileCaches,
+  getActiveProfileSource,
+} from "./profile-sources";
 
-let cachedProfile: ResumeProfile | null = null;
-let cachedResumeId: string | null = null;
+export { clearAllProfileCaches };
 
 /**
- * Get the base resume profile from RxResume.
+ * Get the base resume profile from the configured source (RxResume or raw text).
  *
- * Requires rxresumeBaseResumeId to be configured in settings.
- * Results are cached until clearProfileCache() is called.
+ * Results are cached inside each source implementation until clearProfileCache()
+ * is called.
  *
- * @param forceRefresh Force reload from API.
- * @throws Error if rxresumeBaseResumeId is not configured or API call fails.
+ * @param forceRefresh  Force reload from the upstream source.
+ * @throws Error if the source is not configured or the fetch fails.
  */
 export async function getProfile(forceRefresh = false): Promise<ResumeProfile> {
-  const { resumeId: rxresumeBaseResumeId } =
-    await getConfiguredRxResumeBaseResumeId();
-
-  if (!rxresumeBaseResumeId) {
-    throw new Error(
-      "Base resume not configured. Please select a base resume from your RxResume account in Settings.",
-    );
-  }
-
-  // Return cached profile if valid
-  if (
-    cachedProfile &&
-    cachedResumeId === rxresumeBaseResumeId &&
-    !forceRefresh
-  ) {
-    return cachedProfile;
-  }
-
-  try {
-    logger.info("Fetching profile from Reactive Resume", {
-      resumeId: rxresumeBaseResumeId,
-    });
-    const resume = await getResume(rxresumeBaseResumeId);
-
-    if (!resume.data || typeof resume.data !== "object") {
-      throw new Error("Resume data is empty or invalid");
-    }
-
-    cachedProfile = resume.data as unknown as ResumeProfile;
-    cachedResumeId = rxresumeBaseResumeId;
-    logger.info("Profile loaded from Reactive Resume", {
-      resumeId: rxresumeBaseResumeId,
-    });
-    return cachedProfile;
-  } catch (error) {
-    if (error instanceof RxResumeAuthConfigError) {
-      throw new Error(error.message);
-    }
-    logger.error("Failed to load profile from Reactive Resume", {
-      resumeId: rxresumeBaseResumeId,
-      error,
-    });
-    throw error;
-  }
+  const source = await getActiveProfileSource();
+  return source.getProfile(forceRefresh);
 }
 
 /**
@@ -71,9 +29,8 @@ export async function getPersonName(): Promise<string> {
 }
 
 /**
- * Clear the profile cache.
+ * Clear the profile cache for all sources.
  */
 export function clearProfileCache(): void {
-  cachedProfile = null;
-  cachedResumeId = null;
+  clearAllProfileCaches();
 }

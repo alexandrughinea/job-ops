@@ -178,7 +178,7 @@ describe("AutomaticRunTab", () => {
 
     expect(
       screen.getByTitle(
-        "Gradcracker is available only when country is United Kingdom.",
+        "Gradcracker is available only when United Kingdom is selected.",
       ),
     ).toBeInTheDocument();
   });
@@ -218,7 +218,7 @@ describe("AutomaticRunTab", () => {
     const glassdoorButton = screen.getByRole("button", { name: "Glassdoor" });
     expect(glassdoorButton).toBeDisabled();
     expect(glassdoorButton.getAttribute("title")).toContain(
-      "Glassdoor is not available for the selected country.",
+      "Glassdoor is not available for any of the selected countries.",
     );
   });
 

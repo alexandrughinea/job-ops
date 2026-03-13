@@ -130,6 +130,7 @@ export interface AppSettings {
   searchCities: Resolved<string>;
   jobspyResultsWanted: Resolved<number>;
   jobspyCountryIndeed: Resolved<string>;
+  jobspyCountries: Resolved<string[]>;
   showSponsorInfo: Resolved<boolean>;
   chatStyleTone: Resolved<string>;
   chatStyleFormality: Resolved<string>;
@@ -142,6 +143,7 @@ export interface AppSettings {
   missingSalaryPenalty: Resolved<number>;
   autoSkipScoreThreshold: Resolved<number | null>;
   rxresumeMode: Resolved<RxResumeMode>;
+  profileSourceMode: Resolved<"rxresume" | "raw_text">;
 
   // Model variants (no own default, fallback to model.value):
   modelScorer: ModelResolved;
@@ -169,4 +171,6 @@ export interface AppSettings {
   // Computed:
   basicAuthActive: boolean;
   profileProjects: ResumeProjectCatalogItem[];
+  /** Character count of the stored raw resume text (full text is not sent in settings response). */
+  rawResumeCharCount: number;
 }

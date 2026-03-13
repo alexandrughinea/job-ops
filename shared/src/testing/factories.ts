@@ -179,6 +179,11 @@ export const createAppSettings = (
     default: "united kingdom",
     override: null,
   },
+  jobspyCountries: {
+    value: ["united kingdom"],
+    default: ["united kingdom"],
+    override: null,
+  },
   showSponsorInfo: { value: true, default: true, override: null },
   chatStyleTone: {
     value: "professional",
@@ -207,5 +212,7 @@ export const createAppSettings = (
   missingSalaryPenalty: { value: 10, default: 10, override: null },
   autoSkipScoreThreshold: { value: null, default: null, override: null },
   rxresumeMode: { value: "v5", default: "v5", override: null },
+  profileSourceMode: { value: "rxresume", default: "rxresume", override: null },
+  rawResumeCharCount: 0,
   ...overrides,
 });

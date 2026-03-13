@@ -11,7 +11,7 @@ export interface AutomaticRunValues {
   minSuitabilityScore: number;
   searchTerms: string[];
   runBudget: number;
-  country: string;
+  countries: string[];
   cityLocations: string[];
 }
 
@@ -151,6 +151,7 @@ export function calculateAutomaticEstimate(args: {
   sources: JobSource[];
 }): AutomaticEstimate {
   const { values, sources } = args;
+  const countryMultiplier = Math.max(1, values.countries.length);
   if (values.searchTerms.length === 0) {
     return {
       discovered: {
@@ -193,7 +194,8 @@ export function calculateAutomaticEstimate(args: {
     : 0;
 
   const discoveredCap =
-    jobspyCap + gradcrackerCap + ukvisaCap + adzunaCap + hiringCafeCap;
+    (jobspyCap + gradcrackerCap + ukvisaCap + adzunaCap + hiringCafeCap) *
+    countryMultiplier;
   const discoveredMin = Math.round(discoveredCap * 0.35);
   const discoveredMax = Math.round(discoveredCap * 0.75);
   const processedMin = Math.min(values.topN, discoveredMin);
