@@ -22,8 +22,9 @@ services:
       # Python path (uses system python in container)
       - PYTHON_PATH=/usr/bin/python3
 
+    # Load .env from project root. Create from .env.example and fill in secrets.
     env_file:
-      - path: ./.env
+      - path: .env
         required: false
     restart: unless-stopped
     healthcheck:

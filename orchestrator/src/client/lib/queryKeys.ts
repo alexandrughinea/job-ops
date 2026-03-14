@@ -1,4 +1,8 @@
-import type { JobStatus, PostApplicationProvider } from "@shared/types";
+import type {
+  JobStatus,
+  PostApplicationProvider,
+  RxResumeMode,
+} from "@shared/types";
 
 export const queryKeys = {
   settings: {
@@ -8,6 +12,21 @@ export const queryKeys = {
   profile: {
     all: ["profile"] as const,
     current: () => [...queryKeys.profile.all, "current"] as const,
+    status: () => [...queryKeys.profile.all, "status"] as const,
+    projects: () => [...queryKeys.profile.all, "projects"] as const,
+    rawText: () => [...queryKeys.profile.all, "raw-text"] as const,
+  },
+  rxresume: {
+    all: ["rxresume"] as const,
+    list: (mode: RxResumeMode) =>
+      [...queryKeys.rxresume.all, "list", mode] as const,
+    projects: (resumeId: string) =>
+      [...queryKeys.rxresume.all, "projects", resumeId] as const,
+  },
+  resumeProjects: {
+    all: ["resume-projects"] as const,
+    catalog: () => [...queryKeys.resumeProjects.all, "catalog"] as const,
+    selection: () => [...queryKeys.resumeProjects.all, "selection"] as const,
   },
   tracer: {
     all: ["tracer"] as const,

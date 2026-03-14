@@ -1,8 +1,5 @@
 import * as api from "@client/api";
-import {
-  useMarkAsAppliedMutation,
-  useSkipJobMutation,
-} from "@client/hooks/queries/useJobMutations";
+import { useMutationJobMarkAsApplied, useMutationJobSkip } from "@client/hooks";
 import { useHotkeys } from "@client/hooks/useHotkeys";
 import { useProfile } from "@client/hooks/useProfile";
 import { SHORTCUTS } from "@client/lib/shortcut-map";
@@ -57,8 +54,8 @@ export function useKeyboardShortcuts(args: UseKeyboardShortcutsArgs): void {
   } = args;
 
   const shortcutActionInFlight = useRef(false);
-  const markAsAppliedMutation = useMarkAsAppliedMutation();
-  const skipJobMutation = useSkipJobMutation();
+  const mutationMarkAsApplied = useMutationJobMarkAsApplied();
+  const mutationSkipJob = useMutationJobSkip();
   const { personName } = useProfile();
 
   const navigateJobList = useCallback(
@@ -145,7 +142,7 @@ export function useKeyboardShortcuts(args: UseKeyboardShortcutsArgs): void {
         if (!selectedJob) return;
         shortcutActionInFlight.current = true;
         const jobId = selectedJob.id;
-        skipJobMutation
+        mutationSkipJob
           .mutateAsync(jobId)
           .then(async () => {
             toast.message("Job skipped");
@@ -168,7 +165,7 @@ export function useKeyboardShortcuts(args: UseKeyboardShortcutsArgs): void {
         if (shortcutActionInFlight.current) return;
         shortcutActionInFlight.current = true;
         const jobId = selectedJob.id;
-        markAsAppliedMutation
+        mutationMarkAsApplied
           .mutateAsync(jobId)
           .then(async () => {
             toast.success("Marked as applied", {

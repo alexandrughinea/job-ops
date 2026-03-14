@@ -27,6 +27,8 @@ export type EnvSettingsValues = {
     ukvisajobsEmail: string;
     adzunaAppId: string;
     basicAuthUser: string;
+    gmailOauthClientId: string;
+    gmailOauthRedirectUri: string;
   };
   private: {
     rxresumePasswordHint: string | null;
@@ -34,6 +36,7 @@ export type EnvSettingsValues = {
     adzunaAppKeyHint: string | null;
     basicAuthPasswordHint: string | null;
     webhookSecretHint: string | null;
+    gmailOauthClientSecretHint: string | null;
   };
   basicAuthActive: boolean;
 };

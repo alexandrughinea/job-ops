@@ -61,6 +61,44 @@ export function buildChatCompletionsBody(args: {
   return body;
 }
 
+export type ToolDefinition = {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+};
+
+export type ChatMessageWithTools =
+  | { role: "user" | "system"; content: string }
+  | {
+      role: "assistant";
+      content: string | null;
+      tool_calls?: Array<{
+        id: string;
+        type: "function";
+        function: { name: string; arguments: string };
+      }>;
+    }
+  | { role: "tool"; content: string; tool_call_id: string };
+
+export function buildChatCompletionsBodyWithTools(args: {
+  model: string;
+  messages: ChatMessageWithTools[];
+  tools: ToolDefinition[];
+  extra?: Record<string, unknown>;
+}): Record<string, unknown> {
+  return {
+    model: args.model,
+    messages: args.messages,
+    stream: false,
+    tools: args.tools,
+    tool_choice: "auto",
+    ...(args.extra ?? {}),
+  };
+}
+
 export function extractChatCompletionsText(response: unknown): string | null {
   const content = getNestedValue(response, [
     "choices",

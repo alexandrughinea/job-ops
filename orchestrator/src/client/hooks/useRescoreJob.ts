@@ -1,11 +1,11 @@
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { useRescoreJobMutation } from "@/client/hooks/queries/useJobMutations";
 import { trackProductEvent } from "@/lib/analytics";
+import { useMutationJobRescore } from "./mutations";
 
 export function useRescoreJob(onJobUpdated: () => void | Promise<void>) {
   const [isRescoring, setIsRescoring] = useState(false);
-  const rescoreMutation = useRescoreJobMutation();
+  const mutationRescore = useMutationJobRescore();
 
   const rescoreJob = useCallback(
     async (jobId?: string | null) => {
@@ -13,7 +13,7 @@ export function useRescoreJob(onJobUpdated: () => void | Promise<void>) {
 
       try {
         setIsRescoring(true);
-        await rescoreMutation.mutateAsync(jobId);
+        await mutationRescore.mutateAsync(jobId);
         trackProductEvent("jobs_job_action_completed", {
           action: "rescore",
           result: "success",
@@ -34,7 +34,7 @@ export function useRescoreJob(onJobUpdated: () => void | Promise<void>) {
         setIsRescoring(false);
       }
     },
-    [onJobUpdated, rescoreMutation],
+    [onJobUpdated, mutationRescore],
   );
 
   return { isRescoring, rescoreJob };

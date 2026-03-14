@@ -1,12 +1,24 @@
 import {
+  invalidateJobData,
+  useMutationJobCheckSponsor,
+  useMutationJobGeneratePdf,
+  useMutationJobMarkAsApplied,
+  useMutationJobRescore,
+  useMutationJobSkip,
+  useMutationJobStageEventDelete,
+  useMutationJobTransitionStage,
+  useMutationJobUpdate,
+  useQueryJobFindById,
+  useQueryJobStageEventsFindAll,
+  useQueryJobTasksFindAll,
+} from "@client/hooks";
+import {
   type ApplicationStage,
-  type ApplicationTask,
-  type Job,
   type JobOutcome,
   STAGE_LABELS,
   type StageEvent,
 } from "@shared/types.js";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import confetti from "canvas-confetti";
 import {
   ArrowLeft,
@@ -27,17 +39,7 @@ import {
 import React from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { invalidateJobData } from "@/client/hooks/queries/invalidate";
-import {
-  useCheckSponsorMutation,
-  useGenerateJobPdfMutation,
-  useMarkAsAppliedMutation,
-  useRescoreJobMutation,
-  useSkipJobMutation,
-  useUpdateJobMutation,
-} from "@/client/hooks/queries/useJobMutations";
 import { useQueryErrorToast } from "@/client/hooks/useQueryErrorToast";
-import { queryKeys } from "@/client/lib/queryKeys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,7 +55,6 @@ import {
   formatJobForWebhook,
   formatTimestamp,
 } from "@/lib/utils";
-import * as api from "../api";
 import { ConfirmDelete } from "../components/ConfirmDelete";
 import { GhostwriterDrawer } from "../components/ghostwriter/GhostwriterDrawer";
 import { JobDetailsEditDrawer } from "../components/JobDetailsEditDrawer";
@@ -78,57 +79,46 @@ export const JobPage: React.FC = () => {
   );
   const pendingEventRef = React.useRef<StageEvent | null>(null);
 
-  const jobQuery = useQuery<Job | null>({
-    queryKey: ["jobs", "detail", id ?? null] as const,
-    queryFn: () => (id ? api.getJob(id) : Promise.resolve(null)),
-    enabled: Boolean(id),
-  });
-  const eventsQuery = useQuery<StageEvent[]>({
-    queryKey: ["jobs", "stage-events", id ?? null] as const,
-    queryFn: () => (id ? api.getJobStageEvents(id) : Promise.resolve([])),
-    enabled: Boolean(id),
-  });
-  const tasksQuery = useQuery<ApplicationTask[]>({
-    queryKey: ["jobs", "tasks", id ?? null] as const,
-    queryFn: () => (id ? api.getJobTasks(id) : Promise.resolve([])),
-    enabled: Boolean(id),
-  });
+  const queryJobDetail = useQueryJobFindById(id);
+  const queryJobEvents = useQueryJobStageEventsFindAll(id);
+  const queryJobTasks = useQueryJobTasksFindAll(id);
 
   useQueryErrorToast(
-    jobQuery.error,
+    queryJobDetail.error,
     "Failed to load job details. Please try again.",
   );
   useQueryErrorToast(
-    eventsQuery.error,
+    queryJobEvents.error,
     "Failed to load job timeline. Please try again.",
   );
   useQueryErrorToast(
-    tasksQuery.error,
+    queryJobTasks.error,
     "Failed to load job tasks. Please try again.",
   );
 
-  const markAsAppliedMutation = useMarkAsAppliedMutation();
-  const updateJobMutation = useUpdateJobMutation();
-  const skipJobMutation = useSkipJobMutation();
-  const rescoreJobMutation = useRescoreJobMutation();
-  const generatePdfMutation = useGenerateJobPdfMutation();
-  const checkSponsorMutation = useCheckSponsorMutation();
+  const mutationMarkAsApplied = useMutationJobMarkAsApplied();
+  const mutationUpdateJob = useMutationJobUpdate();
+  const mutationSkipJob = useMutationJobSkip();
+  const mutationRescoreJob = useMutationJobRescore();
+  const mutationGeneratePdf = useMutationJobGeneratePdf();
+  const mutationCheckSponsor = useMutationJobCheckSponsor();
+  const mutationTransitionStage = useMutationJobTransitionStage();
+  const mutationDeleteStageEvent = useMutationJobStageEventDelete();
 
-  const job = jobQuery.data ?? null;
-  const events = mergeEvents(eventsQuery.data ?? [], pendingEventRef.current);
-  const tasks = tasksQuery.data ?? [];
+  const job = queryJobDetail.data ?? null;
+  const events = mergeEvents(
+    queryJobEvents.data ?? [],
+    pendingEventRef.current,
+  );
+  const tasks = queryJobTasks.data ?? [];
   const isLoading =
-    jobQuery.isLoading || eventsQuery.isLoading || tasksQuery.isLoading;
+    queryJobDetail.isLoading ||
+    queryJobEvents.isLoading ||
+    queryJobTasks.isLoading;
 
   const loadData = React.useCallback(async () => {
     if (!id) return;
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.jobs.detail(id) }),
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.jobs.stageEvents(id),
-      }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.jobs.tasks(id) }),
-    ]);
+    await invalidateJobData(queryClient, id);
   }, [id, queryClient]);
 
   const handleLogEvent = async (
@@ -144,14 +134,14 @@ export const JobPage: React.FC = () => {
     let toStage: ApplicationStage | "no_change" = values.stage as
       | ApplicationStage
       | "no_change";
-    let outcome: JobOutcome | null = null;
+    let _outcome: JobOutcome | null = null;
 
     if (values.stage === "rejected") {
       toStage = "closed";
-      outcome = "rejected";
+      _outcome = "rejected";
     } else if (values.stage === "withdrawn") {
       toStage = "closed";
-      outcome = "withdrawn";
+      _outcome = "withdrawn";
     }
 
     const currentStage = events.at(-1)?.toStage ?? "applied";
@@ -160,9 +150,9 @@ export const JobPage: React.FC = () => {
 
     try {
       if (eventId) {
-        await api.updateJobStageEvent(job.id, eventId, {
-          toStage: toStage === "no_change" ? undefined : toStage,
-          occurredAt: toTimestamp(values.date) ?? undefined,
+        await mutationTransitionStage.mutateAsync({
+          jobId: job.id,
+          toStage: toStage === "no_change" ? effectiveStage : toStage,
           metadata: {
             note: values.notes?.trim() || undefined,
             eventLabel: values.title.trim() || undefined,
@@ -171,12 +161,11 @@ export const JobPage: React.FC = () => {
             eventType: values.stage === "no_change" ? "note" : "status_update",
             externalUrl: values.salary ? `Salary: ${values.salary}` : undefined,
           },
-          outcome,
         });
       } else {
-        const newEvent = await api.transitionJobStage(job.id, {
+        const newEvent = await mutationTransitionStage.mutateAsync({
+          jobId: job.id,
           toStage: effectiveStage,
-          occurredAt: toTimestamp(values.date),
           metadata: {
             note: values.notes?.trim() || undefined,
             eventLabel: values.title.trim() || undefined,
@@ -185,12 +174,10 @@ export const JobPage: React.FC = () => {
             eventType: values.stage === "no_change" ? "note" : "status_update",
             externalUrl: values.salary ? `Salary: ${values.salary}` : undefined,
           },
-          outcome,
         });
         pendingEventRef.current = newEvent;
       }
 
-      await invalidateJobData(queryClient, job.id);
       pendingEventRef.current = null;
       setEditingEvent(null);
       toast.success(eventId ? "Event updated" : "Event logged");
@@ -218,8 +205,10 @@ export const JobPage: React.FC = () => {
   const handleDeleteEvent = async () => {
     if (!job || !eventToDelete) return;
     try {
-      await api.deleteJobStageEvent(job.id, eventToDelete);
-      await invalidateJobData(queryClient, job.id);
+      await mutationDeleteStageEvent.mutateAsync({
+        jobId: job.id,
+        eventId: eventToDelete,
+      });
       toast.success("Event deleted");
     } catch (error) {
       const message =
@@ -257,7 +246,7 @@ export const JobPage: React.FC = () => {
   const handleMarkApplied = async () => {
     await runAction("mark-applied", async () => {
       if (!job) return;
-      await markAsAppliedMutation.mutateAsync(job.id);
+      await mutationMarkAsApplied.mutateAsync(job.id);
       toast.success("Marked as applied");
     });
   };
@@ -265,7 +254,7 @@ export const JobPage: React.FC = () => {
   const handleMoveToInProgress = async () => {
     await runAction("move-in-progress", async () => {
       if (!job) return;
-      await updateJobMutation.mutateAsync({
+      await mutationUpdateJob.mutateAsync({
         id: job.id,
         update: { status: "in_progress" },
       });
@@ -276,7 +265,7 @@ export const JobPage: React.FC = () => {
   const handleSkip = async () => {
     await runAction("skip", async () => {
       if (!job) return;
-      await skipJobMutation.mutateAsync(job.id);
+      await mutationSkipJob.mutateAsync(job.id);
       toast.message("Job skipped");
     });
   };
@@ -284,7 +273,7 @@ export const JobPage: React.FC = () => {
   const handleRescore = async () => {
     await runAction("rescore", async () => {
       if (!job) return;
-      await rescoreJobMutation.mutateAsync(job.id);
+      await mutationRescoreJob.mutateAsync(job.id);
       toast.success("Match recalculated");
     });
   };
@@ -292,7 +281,7 @@ export const JobPage: React.FC = () => {
   const handleRegeneratePdf = async () => {
     await runAction("regenerate-pdf", async () => {
       if (!job) return;
-      await generatePdfMutation.mutateAsync(job.id);
+      await mutationGeneratePdf.mutateAsync(job.id);
       toast.success("Resume PDF generated");
     });
   };
@@ -300,7 +289,7 @@ export const JobPage: React.FC = () => {
   const handleCheckSponsor = async () => {
     await runAction("check-sponsor", async () => {
       if (!job) return;
-      await checkSponsorMutation.mutateAsync(job.id);
+      await mutationCheckSponsor.mutateAsync(job.id);
       toast.success("Sponsor check completed");
     });
   };
@@ -692,7 +681,7 @@ export const JobPage: React.FC = () => {
   );
 };
 
-const toTimestamp = (value: string) => {
+const _toTimestamp = (value: string) => {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;

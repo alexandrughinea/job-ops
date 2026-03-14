@@ -1,8 +1,8 @@
-import * as api from "@client/api";
+import { useQueryRxResumesFindAll } from "@client/hooks";
 import type { RxResumeMode } from "@shared/types.js";
 import { RefreshCw } from "lucide-react";
 import type React from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -29,49 +29,26 @@ export const BaseResumeSelection: React.FC<BaseResumeSelectionProps> = ({
   disabled = false,
   isLoading = false,
 }) => {
-  const [resumes, setResumes] = useState<{ id: string; name: string }[]>([]);
-  const [isFetchingResumes, setIsFetchingResumes] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-
-  const fetchResumes = useCallback(async () => {
-    if (!hasRxResumeAccess) {
-      setResumes([]);
-      setFetchError(null);
-      return;
-    }
-
-    setIsFetchingResumes(true);
-    setFetchError(null);
-    try {
-      const data = await api.getRxResumes(rxresumeMode);
-      setResumes(data);
-
-      // Preselect if only one option is available and no value is currently set
-      if (data.length === 1 && !value) {
-        onValueChange(data[0].id);
-      }
-    } catch (error) {
-      setResumes([]);
-      setFetchError(
-        error instanceof Error ? error.message : "Failed to fetch resumes",
-      );
-    } finally {
-      setIsFetchingResumes(false);
-    }
-  }, [hasRxResumeAccess, onValueChange, rxresumeMode, value]);
+  const effectiveMode: RxResumeMode = rxresumeMode ?? "v5";
+  const queryResumes = useQueryRxResumesFindAll(effectiveMode);
+  const resumes = hasRxResumeAccess ? (queryResumes.data ?? []) : [];
+  const isFetchingResumes = queryResumes.isFetching;
+  const fetchError =
+    queryResumes.error instanceof Error
+      ? queryResumes.error.message
+      : queryResumes.error
+        ? "Failed to fetch resumes"
+        : null;
 
   useEffect(() => {
-    if (hasRxResumeAccess) {
-      fetchResumes();
+    if (resumes.length === 1 && !value) {
+      onValueChange(resumes[0].id);
     }
-  }, [hasRxResumeAccess, fetchResumes]);
+  }, [resumes, value, onValueChange]);
 
-  useEffect(() => {
-    if (!hasRxResumeAccess) {
-      setResumes([]);
-      setFetchError(null);
-    }
-  }, [hasRxResumeAccess]);
+  const fetchResumes = useCallback(() => {
+    queryResumes.refetch();
+  }, [queryResumes]);
 
   return (
     <div className="space-y-2">

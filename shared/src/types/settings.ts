@@ -158,6 +158,8 @@ export interface AppSettings {
   ukvisajobsEmail: string | null;
   adzunaAppId: string | null;
   basicAuthUser: string | null;
+  gmailOauthClientId: string | null;
+  gmailOauthRedirectUri: string | null;
 
   // Secret hints:
   llmApiKeyHint: string | null;
@@ -167,6 +169,7 @@ export interface AppSettings {
   adzunaAppKeyHint: string | null;
   basicAuthPasswordHint: string | null;
   webhookSecretHint: string | null;
+  gmailOauthClientSecretHint: string | null;
 
   // Computed:
   basicAuthActive: boolean;

@@ -421,6 +421,19 @@ export const settingsRegistry = {
     envKey: "BASIC_AUTH_USER",
     schema: z.string().trim().max(200),
   },
+  gmailOauthClientId: {
+    kind: "string" as const,
+    envKey: "GMAIL_OAUTH_CLIENT_ID",
+    schema: z.string().trim().max(500),
+  },
+  gmailOauthRedirectUri: {
+    kind: "string" as const,
+    envKey: "GMAIL_OAUTH_REDIRECT_URI",
+    schema: z.preprocess(
+      (v: unknown) => (v === "" ? null : v),
+      z.string().trim().url().max(2000).nullable(),
+    ),
+  },
 
   // --- Secrets ---
   llmApiKey: {
@@ -456,6 +469,11 @@ export const settingsRegistry = {
   webhookSecret: {
     kind: "secret" as const,
     envKey: "WEBHOOK_SECRET",
+    schema: z.string().trim().max(2000),
+  },
+  gmailOauthClientSecret: {
+    kind: "secret" as const,
+    envKey: "GMAIL_OAUTH_CLIENT_SECRET",
     schema: z.string().trim().max(2000),
   },
 

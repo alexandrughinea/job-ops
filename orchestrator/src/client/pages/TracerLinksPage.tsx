@@ -1,17 +1,17 @@
-import * as api from "@client/api";
 import { PageHeader, PageMain, SectionCard } from "@client/components/layout";
+import {
+  useQueryJobTracerLinksFindAll,
+  useQueryTracerAnalyticsFindAll,
+} from "@client/hooks";
 import type {
   JobTracerLinkAnalyticsItem,
-  TracerAnalyticsResponse,
   TracerAnalyticsTopJob,
 } from "@shared/types.js";
-import { useQuery } from "@tanstack/react-query";
 import { BarChart3, Copy, ExternalLink, Loader2 } from "lucide-react";
 import type React from "react";
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
-import { queryKeys } from "@/client/lib/queryKeys";
 import {
   Accordion,
   AccordionContent,
@@ -134,27 +134,15 @@ export const TracerLinksPage: React.FC = () => {
     [fromDate, toDate, includeBots],
   );
 
-  const analyticsQuery = useQuery<TracerAnalyticsResponse>({
-    queryKey: queryKeys.tracer.analytics(query),
-    queryFn: () => api.getTracerAnalytics(query),
-  });
+  const analyticsQuery = useQueryTracerAnalyticsFindAll(query);
   const analytics = analyticsQuery.data ?? null;
   const isLoading = analyticsQuery.isPending;
 
-  const jobDrilldownQuery = useQuery({
-    queryKey: queryKeys.tracer.jobLinks(selectedDrilldownJobId ?? "", {
-      from: query.from,
-      to: query.to,
-      includeBots,
-    }),
-    queryFn: () =>
-      api.getJobTracerLinks(selectedDrilldownJobId ?? "", {
-        from: query.from,
-        to: query.to,
-        includeBots,
-      }),
-    enabled: Boolean(isDrilldownOpen && selectedDrilldownJobId),
-  });
+  const jobDrilldownQuery = useQueryJobTracerLinksFindAll(
+    selectedDrilldownJobId,
+    { from: query.from, to: query.to, includeBots },
+    isDrilldownOpen,
+  );
   const jobDrilldown = jobDrilldownQuery.data ?? null;
   const isDrilldownLoading =
     jobDrilldownQuery.isPending || jobDrilldownQuery.isFetching;

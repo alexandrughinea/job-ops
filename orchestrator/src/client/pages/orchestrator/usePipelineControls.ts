@@ -1,4 +1,8 @@
-import * as api from "@client/api";
+import {
+  useMutationPipelineCancel,
+  useMutationPipelineRun,
+  useMutationSettingsUpdate,
+} from "@client/hooks";
 import { useSettings } from "@client/hooks/useSettings";
 import {
   formatCountryLabel,
@@ -58,6 +62,9 @@ export function usePipelineControls(
   const [isCancelling, setIsCancelling] = useState(false);
 
   const { refreshSettings } = useSettings();
+  const mutationRunPipeline = useMutationPipelineRun();
+  const mutationCancelPipeline = useMutationPipelineCancel();
+  const mutationUpdateSettings = useMutationSettingsUpdate();
 
   useEffect(() => {
     if (!pipelineTerminalEvent) return;
@@ -118,7 +125,7 @@ export function usePipelineControls(
           has_city_locations: config.analytics?.hasCityLocations,
           search_terms_count: config.analytics?.searchTermsCount,
         });
-        await api.runPipeline({
+        await mutationRunPipeline.mutateAsync({
           topN: config.topN,
           minSuitabilityScore: config.minSuitabilityScore,
           sources: config.sources,
@@ -134,7 +141,7 @@ export function usePipelineControls(
         toast.error(message);
       }
     },
-    [setIsPipelineRunning],
+    [mutationRunPipeline, setIsPipelineRunning],
   );
 
   const handleCancelPipeline = useCallback(async () => {
@@ -145,7 +152,7 @@ export function usePipelineControls(
       trackProductEvent("jobs_pipeline_run_cancel_requested", {
         was_running: isPipelineRunning,
       });
-      const result = await api.cancelPipeline();
+      const result = await mutationCancelPipeline.mutateAsync();
       toast.message(result.message);
     } catch (error) {
       setIsCancelling(false);
@@ -153,7 +160,7 @@ export function usePipelineControls(
         error instanceof Error ? error.message : "Failed to cancel pipeline";
       toast.error(message);
     }
-  }, [isCancelling, isPipelineRunning]);
+  }, [isCancelling, isPipelineRunning, mutationCancelPipeline.mutateAsync]);
 
   const handleSaveAndRunAutomatic = useCallback(
     async (values: AutomaticRunValues) => {
@@ -189,7 +196,7 @@ export function usePipelineControls(
         (hasJobSpySite || hasAdzuna || hasHiringCafe) && serializedCities
           ? serializedCities
           : formatCountryLabel(primaryCountry);
-      await api.updateSettings({
+      await mutationUpdateSettings.mutateAsync({
         searchTerms: values.searchTerms,
         jobspyResultsWanted: limits.jobspyResultsWanted,
         gradcrackerMaxJobsPerTerm: limits.gradcrackerMaxJobsPerTerm,
@@ -213,7 +220,12 @@ export function usePipelineControls(
       });
       setIsRunModeModalOpen(false);
     },
-    [pipelineSources, refreshSettings, startPipelineRun],
+    [
+      mutationUpdateSettings,
+      pipelineSources,
+      refreshSettings,
+      startPipelineRun,
+    ],
   );
 
   const handleManualImported = useCallback(

@@ -1,3 +1,11 @@
+import * as api from "@client/api";
+import {
+  useQueryJobFindAll,
+  useQueryPostApplicationInboxFindAll,
+  useQueryPostApplicationProviderStatusFindCurrent,
+  useQueryPostApplicationRunMessagesFindAll,
+  useQueryPostApplicationRunsFindAll,
+} from "@client/hooks";
 import type {
   JobListItem,
   PostApplicationInboxItem,
@@ -5,7 +13,6 @@ import type {
   PostApplicationSyncRun,
 } from "@shared/types";
 import { POST_APPLICATION_PROVIDERS } from "@shared/types";
-import { useQuery } from "@tanstack/react-query";
 import {
   CheckCircle,
   Inbox,
@@ -20,7 +27,6 @@ import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useQueryErrorToast } from "@/client/hooks/useQueryErrorToast";
-import { queryKeys } from "@/client/lib/queryKeys";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,7 +58,6 @@ import {
 } from "@/components/ui/select";
 import { trackProductEvent } from "@/lib/analytics";
 import { formatDateTime } from "@/lib/utils";
-import * as api from "../api";
 import { EmptyState, PageHeader, PageMain } from "../components";
 import { EmailViewerList } from "./tracking-inbox/EmailViewerList";
 
@@ -97,74 +102,58 @@ export const TrackingInboxPage: React.FC = () => {
   const [appliedJobByMessageId, setAppliedJobByMessageId] = useState<
     Record<string, string>
   >({});
-  const statusQuery = useQuery({
-    queryKey: queryKeys.postApplication.providerStatus(provider, accountKey),
-    queryFn: () => api.postApplicationProviderStatus({ provider, accountKey }),
-    enabled: Boolean(provider && accountKey),
-  });
-  const inboxQuery = useQuery({
-    queryKey: queryKeys.postApplication.inbox(provider, accountKey, 100),
-    queryFn: () =>
-      api.getPostApplicationInbox({ provider, accountKey, limit: 100 }),
-    enabled: Boolean(provider && accountKey),
-  });
-  const runsQuery = useQuery({
-    queryKey: queryKeys.postApplication.runs(provider, accountKey, 20),
-    queryFn: () =>
-      api.getPostApplicationRuns({ provider, accountKey, limit: 20 }),
-    enabled: Boolean(provider && accountKey),
-  });
 
-  const status = statusQuery.data?.status ?? null;
-  const inbox = inboxQuery.data?.items ?? EMPTY_INBOX_ITEMS;
-  const runs = runsQuery.data?.runs ?? EMPTY_SYNC_RUNS;
+  const hasProviderConfig = Boolean(provider && accountKey);
+  const queryStatus = useQueryPostApplicationProviderStatusFindCurrent(
+    provider,
+    accountKey,
+    hasProviderConfig,
+  );
+  const queryInbox = useQueryPostApplicationInboxFindAll(
+    provider,
+    accountKey,
+    100,
+    hasProviderConfig,
+  );
+  const queryRuns = useQueryPostApplicationRunsFindAll(
+    provider,
+    accountKey,
+    20,
+    hasProviderConfig,
+  );
 
-  const runMessagesQuery = useQuery({
-    queryKey: queryKeys.postApplication.runMessages(
-      selectedRun?.id ?? "",
-      provider,
-      accountKey,
-    ),
-    queryFn: () =>
-      api.getPostApplicationRunMessages({
-        runId: selectedRun?.id ?? "",
-        provider,
-        accountKey,
-      }),
-    enabled: Boolean(
-      isRunModalOpen && selectedRun?.id && provider && accountKey,
-    ),
-  });
-  const selectedRunItems = runMessagesQuery.data?.items ?? EMPTY_INBOX_ITEMS;
+  const status = queryStatus.data?.status ?? null;
+  const inbox = queryInbox.data?.items ?? EMPTY_INBOX_ITEMS;
+  const runs = queryRuns.data?.runs ?? EMPTY_SYNC_RUNS;
+
+  const queryRunMessages = useQueryPostApplicationRunMessagesFindAll(
+    selectedRun?.id,
+    provider,
+    accountKey,
+    Boolean(isRunModalOpen && selectedRun?.id),
+  );
+  const selectedRunItems = queryRunMessages.data?.items ?? EMPTY_INBOX_ITEMS;
   const isRunMessagesLoading =
-    runMessagesQuery.isPending || runMessagesQuery.isFetching;
+    queryRunMessages.isPending || queryRunMessages.isFetching;
 
   const hasReviewItems = useMemo(
     () => inbox.length > 0 || selectedRunItems.length > 0,
     [inbox.length, selectedRunItems.length],
   );
 
-  const appliedJobsQuery = useQuery({
-    queryKey: queryKeys.jobs.list({
-      statuses: ["applied", "in_progress"],
-      view: "list",
-    }),
-    queryFn: () =>
-      api.getJobs({
-        statuses: ["applied", "in_progress"],
-        view: "list",
-      }),
-    enabled: hasReviewItems,
+  const queryAppliedJobs = useQueryJobFindAll({
+    statuses: ["applied", "in_progress"],
+    view: "list",
   });
   const appliedJobs = useMemo<JobListItem[]>(
     () =>
-      (appliedJobsQuery.data?.jobs ?? []).filter(
+      (queryAppliedJobs.data?.jobs ?? []).filter(
         (job) => job.status === "applied" || job.status === "in_progress",
       ),
-    [appliedJobsQuery.data?.jobs],
+    [queryAppliedJobs.data?.jobs],
   );
   const isAppliedJobsLoading =
-    appliedJobsQuery.isPending || appliedJobsQuery.isFetching;
+    queryAppliedJobs.isPending || queryAppliedJobs.isFetching;
 
   const [inboxActionDialog, setInboxActionDialog] = useState<{
     isOpen: boolean;
@@ -172,16 +161,16 @@ export const TrackingInboxPage: React.FC = () => {
     itemCount: number;
   }>({ isOpen: false, action: null, itemCount: 0 });
   const isLoading =
-    statusQuery.isPending || inboxQuery.isPending || runsQuery.isPending;
+    queryStatus.isPending || queryInbox.isPending || queryRuns.isPending;
 
   const refresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
       await Promise.all([
-        statusQuery.refetch(),
-        inboxQuery.refetch(),
-        runsQuery.refetch(),
-        hasReviewItems ? appliedJobsQuery.refetch() : Promise.resolve(),
+        queryStatus.refetch(),
+        queryInbox.refetch(),
+        queryRuns.refetch(),
+        hasReviewItems ? queryAppliedJobs.refetch() : Promise.resolve(),
       ]);
     } catch (error) {
       const message =
@@ -192,7 +181,7 @@ export const TrackingInboxPage: React.FC = () => {
     } finally {
       setIsRefreshing(false);
     }
-  }, [appliedJobsQuery, hasReviewItems, inboxQuery, runsQuery, statusQuery]);
+  }, [queryAppliedJobs, hasReviewItems, queryInbox, queryRuns, queryStatus]);
 
   useEffect(() => {
     if (!provider || !accountKey) return;
@@ -600,17 +589,17 @@ export const TrackingInboxPage: React.FC = () => {
   }, []);
 
   useQueryErrorToast(
-    statusQuery.error,
+    queryStatus.error,
     "Failed to load provider connection status",
   );
-  useQueryErrorToast(inboxQuery.error, "Failed to load inbox");
-  useQueryErrorToast(runsQuery.error, "Failed to load sync runs");
+  useQueryErrorToast(queryInbox.error, "Failed to load inbox");
+  useQueryErrorToast(queryRuns.error, "Failed to load sync runs");
   useQueryErrorToast(
-    appliedJobsQuery.error,
+    queryAppliedJobs.error,
     "Failed to load jobs for inbox matching",
   );
   useQueryErrorToast(
-    runMessagesQuery.error,
+    queryRunMessages.error,
     "Failed to load messages for selected sync run",
   );
 

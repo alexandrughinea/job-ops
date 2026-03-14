@@ -1,3 +1,4 @@
+import { CompanyButton } from "@client/components/CompanyButton";
 import type { JobListItem } from "@shared/types.js";
 import { cn } from "@/lib/utils";
 import { defaultStatusToken, statusTokens } from "./constants";
@@ -28,10 +29,25 @@ export const JobRowContent = ({
   const suitabilityTone = getSuitabilityScoreTone(job.suitabilityScore ?? 0);
 
   return (
-    <div className={cn("flex min-w-0 flex-1 items-center gap-3", className)}>
+    <div
+      className={cn(
+        "grid min-w-0 flex-1 gap-0.5",
+        "grid-cols-[auto_1fr_auto] grid-rows-[auto_auto]",
+        className,
+      )}
+    >
+      <div
+        className={cn(
+          "truncate text-sm leading-tight col-span-3",
+          isSelected ? "font-semibold" : "font-medium",
+        )}
+      >
+        {job.title}
+      </div>
+
       <span
         className={cn(
-          "h-2 w-2 rounded-full shrink-0",
+          "h-2 w-2 rounded-full shrink-0 self-center",
           statusToken.dot,
           !isSelected && "opacity-70",
           statusDotClassName,
@@ -39,34 +55,30 @@ export const JobRowContent = ({
         )}
         title={statusToken.label}
       />
-
-      <div className="min-w-0 flex-1">
-        <div
-          className={cn(
-            "truncate text-sm leading-tight",
-            isSelected ? "font-semibold" : "font-medium",
-          )}
-        >
-          {job.title}
-        </div>
-        <div className="truncate text-xs text-muted-foreground mt-0.5">
-          {job.employer}
-          {job.location && (
-            <span className="before:content-['_in_']">{job.location}</span>
-          )}
-        </div>
-        {job.salary?.trim() && (
-          <div className="truncate text-xs text-muted-foreground mt-0.5">
-            {job.salary}
-          </div>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-1 truncate text-xs text-muted-foreground">
+        <CompanyButton
+          companyName={job.employer}
+          job={job}
+          className="text-xs shrink-0"
+        />
+        {job.location && (
+          <span className="before:content-['_in_']">{job.location}</span>
         )}
       </div>
-
       {hasScore && (
-        <div className="shrink-0 text-right">
-          <span className={cn("text-xs tabular-nums", suitabilityTone)}>
-            {job.suitabilityScore}
-          </span>
+        <span
+          className={cn(
+            "text-xs tabular-nums text-right self-center",
+            suitabilityTone,
+          )}
+        >
+          {job.suitabilityScore}
+        </span>
+      )}
+
+      {job.salary?.trim() && (
+        <div className="col-span-3 truncate text-xs text-muted-foreground">
+          {job.salary}
         </div>
       )}
     </div>

@@ -1,4 +1,8 @@
 import * as api from "@client/api";
+import {
+  useMutationRawResumeTextSave,
+  useMutationResumePdfUpload,
+} from "@client/hooks";
 import type { UpdateSettingsInput } from "@shared/settings-schema.js";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
@@ -35,6 +39,8 @@ export const ProfileSourceSection: React.FC<ProfileSourceSectionProps> = ({
   const [isSavingText, setIsSavingText] = useState(false);
   const [textLoaded, setTextLoaded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mutationSaveText = useMutationRawResumeTextSave();
+  const mutationUploadPdf = useMutationResumePdfUpload();
   const watchedMode =
     (watch("profileSourceMode") as
       | "rxresume"
@@ -66,7 +72,7 @@ export const ProfileSourceSection: React.FC<ProfileSourceSectionProps> = ({
     }
     try {
       setIsSavingText(true);
-      const { charCount } = await api.setRawResumeText(rawText);
+      const { charCount } = await mutationSaveText.mutateAsync(rawText);
       toast.success("Resume text saved", {
         description: `${charCount.toLocaleString()} characters stored`,
       });
@@ -90,7 +96,7 @@ export const ProfileSourceSection: React.FC<ProfileSourceSectionProps> = ({
     try {
       setIsSavingText(true);
       const buffer = await file.arrayBuffer();
-      const { charCount } = await api.uploadResumePdf(buffer);
+      const { charCount } = await mutationUploadPdf.mutateAsync(buffer);
       const { text } = await api.getRawResumeText();
       setRawText(text);
       setTextLoaded(true);

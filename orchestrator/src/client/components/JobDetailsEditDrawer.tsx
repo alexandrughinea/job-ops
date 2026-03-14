@@ -14,7 +14,11 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
-import * as api from "../api";
+import {
+  useMutationJobCheckSponsor,
+  useMutationJobRescore,
+  useMutationJobUpdate,
+} from "../hooks";
 import { useTracerReadiness } from "../hooks/useTracerReadiness";
 
 interface JobDetailsEditDrawerProps {
@@ -88,6 +92,10 @@ export const JobDetailsEditDrawer: React.FC<JobDetailsEditDrawerProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const { readiness: tracerReadiness, isChecking: isTracerReadinessChecking } =
     useTracerReadiness();
+
+  const mutationUpdateJob = useMutationJobUpdate();
+  const mutationCheckSponsor = useMutationJobCheckSponsor();
+  const mutationRescoreJob = useMutationJobRescore();
 
   useEffect(() => {
     if (!open) return;
@@ -168,21 +176,24 @@ export const JobDetailsEditDrawer: React.FC<JobDetailsEditDrawerProps> = ({
       const employerChanged =
         employer.toLowerCase() !== job.employer.trim().toLowerCase();
 
-      await api.updateJob(job.id, {
-        title,
-        employer,
-        jobUrl,
-        applicationLink: normalizeOptional(draft.applicationLink),
-        location: normalizeOptional(draft.location),
-        salary: normalizeOptional(draft.salary),
-        deadline: normalizeOptional(draft.deadline),
-        jobDescription: normalizeOptional(draft.jobDescription),
-        tracerLinksEnabled: draft.tracerLinksEnabled,
+      await mutationUpdateJob.mutateAsync({
+        id: job.id,
+        update: {
+          title,
+          employer,
+          jobUrl,
+          applicationLink: normalizeOptional(draft.applicationLink),
+          location: normalizeOptional(draft.location),
+          salary: normalizeOptional(draft.salary),
+          deadline: normalizeOptional(draft.deadline),
+          jobDescription: normalizeOptional(draft.jobDescription),
+          tracerLinksEnabled: draft.tracerLinksEnabled,
+        },
       });
 
       if (employerChanged) {
         try {
-          await api.checkSponsor(job.id);
+          await mutationCheckSponsor.mutateAsync(job.id);
         } catch (error) {
           const message =
             error instanceof Error
@@ -200,7 +211,7 @@ export const JobDetailsEditDrawer: React.FC<JobDetailsEditDrawerProps> = ({
           onClick: () => {
             void (async () => {
               try {
-                await api.rescoreJob(job.id);
+                await mutationRescoreJob.mutateAsync(job.id);
                 await onJobUpdated();
                 toast.success("Match recalculated");
               } catch (error) {

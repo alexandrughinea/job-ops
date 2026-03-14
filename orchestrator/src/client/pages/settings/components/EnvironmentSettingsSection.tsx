@@ -95,6 +95,72 @@ export const EnvironmentSettingsSection: React.FC<
 
           <Separator />
 
+          {/* Gmail OAuth */}
+          <div className="space-y-4">
+            <div className="text-sm font-semibold">Gmail OAuth</div>
+            <p className="text-xs text-muted-foreground">
+              Required to connect Gmail for application tracking. Create OAuth
+              credentials at{" "}
+              <a
+                href="https://console.cloud.google.com/apis/credentials"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2"
+              >
+                Google Cloud Console
+              </a>
+              . Set the authorized redirect URI to{" "}
+              <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">
+                {typeof window !== "undefined"
+                  ? `${window.location.origin}/oauth/gmail/callback`
+                  : "/oauth/gmail/callback"}
+              </code>
+              .
+            </p>
+            <div className="grid gap-4 md:grid-cols-2">
+              <SettingsInput
+                label="Client ID"
+                inputProps={register("gmailOauthClientId")}
+                placeholder="your-client-id.apps.googleusercontent.com"
+                disabled={isLoading || isSaving}
+                error={errors.gmailOauthClientId?.message as string | undefined}
+                current={
+                  privateValues.gmailOauthClientSecretHint
+                    ? values.readable.gmailOauthClientId || undefined
+                    : undefined
+                }
+              />
+              <SettingsInput
+                label="Client Secret"
+                inputProps={register("gmailOauthClientSecret")}
+                type="password"
+                placeholder="Enter new client secret"
+                disabled={isLoading || isSaving}
+                error={
+                  errors.gmailOauthClientSecret?.message as string | undefined
+                }
+                current={formatSecretHint(
+                  privateValues.gmailOauthClientSecretHint,
+                )}
+              />
+            </div>
+            <SettingsInput
+              label="Redirect URI (optional)"
+              inputProps={register("gmailOauthRedirectUri")}
+              placeholder={
+                typeof window !== "undefined"
+                  ? `${window.location.origin}/oauth/gmail/callback`
+                  : "https://your-domain.com/oauth/gmail/callback"
+              }
+              disabled={isLoading || isSaving}
+              error={
+                errors.gmailOauthRedirectUri?.message as string | undefined
+              }
+            />
+          </div>
+
+          <Separator />
+
           {/* Security */}
           <div className="space-y-4">
             <div className="text-sm font-bold uppercase tracking-wider text-muted-foreground">

@@ -57,6 +57,17 @@ export type LlmServiceOptions = {
   apiKey?: string | null;
 };
 
+export type ToolMessage = {
+  role: "user" | "system" | "assistant" | "tool";
+  content: string | null;
+  tool_call_id?: string;
+  tool_calls?: Array<{
+    id: string;
+    type: "function";
+    function: { name: string; arguments: string };
+  }>;
+};
+
 export type ProviderStrategy = {
   provider: LlmProvider;
   defaultBaseUrl: string;
@@ -71,7 +82,26 @@ export type ProviderStrategy = {
     messages: LlmRequestOptions<unknown>["messages"];
     jsonSchema: JsonSchemaDefinition;
   }) => { url: string; headers: Record<string, string>; body: unknown };
+  buildRequestWithTools?: (args: {
+    baseUrl: string;
+    apiKey: string | null;
+    model: string;
+    messages: ToolMessage[];
+    tools: Array<{
+      type: "function";
+      function: {
+        name: string;
+        description: string;
+        parameters: Record<string, unknown>;
+      };
+    }>;
+  }) => { url: string; headers: Record<string, string>; body: unknown };
   extractText: (response: unknown) => string | null;
+  extractToolCalls?: (response: unknown) => Array<{
+    id: string;
+    function: { name: string; arguments: string };
+  }> | null;
+  extractMessageContent?: (response: unknown) => string | null;
   isCapabilityError: (args: {
     mode: ResponseMode;
     status?: number;

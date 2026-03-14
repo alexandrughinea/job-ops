@@ -4,6 +4,7 @@
 
 import { Router } from "express";
 import { backupRouter } from "./routes/backup";
+import { companyIntelRouter } from "./routes/company-intel";
 import { databaseRouter } from "./routes/database";
 import { demoRouter } from "./routes/demo";
 import { ghostwriterRouter } from "./routes/ghostwriter";
@@ -21,6 +22,7 @@ import { webhookRouter } from "./routes/webhook";
 
 export const apiRouter = Router();
 
+apiRouter.use("/company-intel", companyIntelRouter);
 apiRouter.use("/jobs", jobsRouter);
 apiRouter.use("/jobs/:id/chat", ghostwriterRouter);
 apiRouter.use("/demo", demoRouter);

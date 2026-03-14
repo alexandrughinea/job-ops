@@ -1,4 +1,8 @@
-import * as api from "@client/api";
+import {
+  useMutationJobFetchFromUrl,
+  useMutationJobImport,
+  useMutationJobInfer,
+} from "@client/hooks";
 import type { ManualJobDraft } from "@shared/types.js";
 import {
   ArrowLeft,
@@ -128,6 +132,10 @@ export const ManualImportFlow: React.FC<ManualImportFlowProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
 
+  const mutationFetchFromUrl = useMutationJobFetchFromUrl();
+  const mutationInfer = useMutationJobInfer();
+  const mutationImport = useMutationJobImport();
+
   useEffect(() => {
     if (active) return;
     setStep("paste");
@@ -163,13 +171,15 @@ export const ManualImportFlow: React.FC<ManualImportFlowProps> = ({
       setWarning(null);
       setIsFetching(true);
 
-      const fetchResponse = await api.fetchJobFromUrl({ url: fetchUrl.trim() });
+      const fetchResponse = await mutationFetchFromUrl.mutateAsync({
+        url: fetchUrl.trim(),
+      });
       const fetchedContent = fetchResponse.content;
       const fetchedUrl = fetchResponse.url;
 
       setIsFetching(false);
       setStep("loading");
-      const inferResponse = await api.inferManualJob({
+      const inferResponse = await mutationInfer.mutateAsync({
         jobDescription: fetchedContent,
       });
       const normalized = normalizeDraft(inferResponse.job);
@@ -200,7 +210,7 @@ export const ManualImportFlow: React.FC<ManualImportFlowProps> = ({
       setError(null);
       setWarning(null);
       setStep("loading");
-      const response = await api.inferManualJob({
+      const response = await mutationInfer.mutateAsync({
         jobDescription: rawDescription,
       });
       const normalized = normalizeDraft(response.job, rawDescription.trim());
@@ -226,7 +236,7 @@ export const ManualImportFlow: React.FC<ManualImportFlowProps> = ({
     try {
       setIsImporting(true);
       const payload = toPayload(draft);
-      const created = await api.importManualJob({ job: payload });
+      const created = await mutationImport.mutateAsync({ job: payload });
       toast.success("Job imported", {
         description: "The job was tailored and moved to the ready column.",
       });

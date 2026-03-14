@@ -1,4 +1,8 @@
-import * as api from "@client/api";
+import {
+  useMutationJobGeneratePdf,
+  useMutationJobSummarize,
+  useMutationJobUpdate,
+} from "@client/hooks";
 import { useProfile } from "@client/hooks/useProfile";
 import { useTracerReadiness } from "@client/hooks/useTracerReadiness";
 import type { Job } from "@shared/types.js";
@@ -102,6 +106,10 @@ export const TailoringWorkspace: React.FC<TailoringWorkspaceProps> = (
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const { profile, error: profileError } = useProfile();
+
+  const mutationUpdateJob = useMutationJobUpdate();
+  const mutationSummarizeJob = useMutationJobSummarize();
+  const mutationGeneratePdf = useMutationJobGeneratePdf();
   const { readiness: tracerReadiness, isChecking: isTracerReadinessChecking } =
     useTracerReadiness();
 
@@ -159,9 +167,17 @@ export const TailoringWorkspace: React.FC<TailoringWorkspaceProps> = (
   );
 
   const persistCurrent = useCallback(async () => {
-    const updatedJob = await api.updateJob(props.job.id, savePayload);
+    const updatedJob = await mutationUpdateJob.mutateAsync({
+      id: props.job.id,
+      update: savePayload,
+    });
     applyIncomingDraft(updatedJob);
-  }, [props.job.id, savePayload, applyIncomingDraft]);
+  }, [
+    props.job.id,
+    savePayload,
+    applyIncomingDraft,
+    mutationUpdateJob.mutateAsync,
+  ]);
 
   // Note: Auto-save removed.
   // Editor mode: user must explicitly save via the "Save Selection" button to persist changes.
@@ -174,7 +190,10 @@ export const TailoringWorkspace: React.FC<TailoringWorkspaceProps> = (
 
       try {
         setIsSaving(true);
-        const updatedJob = await api.updateJob(props.job.id, savePayload);
+        const updatedJob = await mutationUpdateJob.mutateAsync({
+          id: props.job.id,
+          update: savePayload,
+        });
         applyIncomingDraft(updatedJob);
         if (showToast) toast.success("Changes saved");
         await editorProps.onUpdate();
@@ -185,7 +204,13 @@ export const TailoringWorkspace: React.FC<TailoringWorkspaceProps> = (
         setIsSaving(false);
       }
     },
-    [editorProps, props.job.id, savePayload, applyIncomingDraft],
+    [
+      editorProps,
+      props.job.id,
+      savePayload,
+      applyIncomingDraft,
+      mutationUpdateJob.mutateAsync,
+    ],
   );
 
   useEffect(() => {
@@ -202,7 +227,10 @@ export const TailoringWorkspace: React.FC<TailoringWorkspaceProps> = (
         await saveChanges({ showToast: false });
       }
 
-      const updatedJob = await api.summarizeJob(props.job.id, { force: true });
+      const updatedJob = await mutationSummarizeJob.mutateAsync({
+        id: props.job.id,
+        force: true,
+      });
       applyIncomingDraft(updatedJob);
       setAiBaseline(toBaselineFromJob(updatedJob));
       toast.success("AI Summary & Projects generated");
@@ -214,7 +242,14 @@ export const TailoringWorkspace: React.FC<TailoringWorkspaceProps> = (
     } finally {
       setIsSummarizing(false);
     }
-  }, [editorProps, isDirty, saveChanges, props.job.id, applyIncomingDraft]);
+  }, [
+    editorProps,
+    isDirty,
+    saveChanges,
+    props.job.id,
+    applyIncomingDraft,
+    mutationSummarizeJob.mutateAsync,
+  ]);
 
   const handleGenerateWithAi = useCallback(async () => {
     if (!tailorProps) return;
@@ -226,7 +261,10 @@ export const TailoringWorkspace: React.FC<TailoringWorkspaceProps> = (
         await persistCurrent();
       }
 
-      const updatedJob = await api.summarizeJob(props.job.id, { force: true });
+      const updatedJob = await mutationSummarizeJob.mutateAsync({
+        id: props.job.id,
+        force: true,
+      });
       applyIncomingDraft(updatedJob);
       setAiBaseline(toBaselineFromJob(updatedJob));
 
@@ -240,7 +278,14 @@ export const TailoringWorkspace: React.FC<TailoringWorkspaceProps> = (
     } finally {
       setIsGenerating(false);
     }
-  }, [tailorProps, isDirty, persistCurrent, props.job.id, applyIncomingDraft]);
+  }, [
+    tailorProps,
+    isDirty,
+    persistCurrent,
+    props.job.id,
+    applyIncomingDraft,
+    mutationSummarizeJob.mutateAsync,
+  ]);
 
   const handleGeneratePdf = useCallback(async () => {
     if (!editorProps) return;
@@ -253,7 +298,7 @@ export const TailoringWorkspace: React.FC<TailoringWorkspaceProps> = (
 
       setIsGeneratingPdf(true);
       await saveChanges({ showToast: false });
-      await api.generateJobPdf(props.job.id);
+      await mutationGeneratePdf.mutateAsync(props.job.id);
       toast.success("Resume PDF generated");
       await editorProps.onUpdate();
     } catch (error) {
@@ -269,7 +314,7 @@ export const TailoringWorkspace: React.FC<TailoringWorkspaceProps> = (
     } finally {
       setIsGeneratingPdf(false);
     }
-  }, [editorProps, saveChanges, props.job.id]);
+  }, [editorProps, saveChanges, props.job.id, mutationGeneratePdf.mutateAsync]);
 
   const handleFinalize = useCallback(async () => {
     if (!tailorProps) return;

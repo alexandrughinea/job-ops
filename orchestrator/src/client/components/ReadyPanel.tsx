@@ -7,7 +7,7 @@
  * Now includes inline tailoring mode for editing and regenerating PDFs without switching tabs.
  */
 
-import type { Job, ResumeProjectCatalogItem } from "@shared/types.js";
+import type { Job } from "@shared/types.js";
 import {
   CheckCircle2,
   ChevronUp,
@@ -40,11 +40,14 @@ import {
   formatJobForWebhook,
   safeFilenamePart,
 } from "@/lib/utils";
-import * as api from "../api";
 import {
-  useMarkAsAppliedMutation,
-  useSkipJobMutation,
-} from "../hooks/queries/useJobMutations";
+  useMutationJobCheckSponsor,
+  useMutationJobGeneratePdf,
+  useMutationJobMarkAsApplied,
+  useMutationJobSkip,
+  useMutationJobUpdate,
+  useQueryResumeProjectCatalogFindAll,
+} from "../hooks";
 import { useProfile } from "../hooks/useProfile";
 import { useRescoreJob } from "../hooks/useRescoreJob";
 import { FitAssessment, JobHeader, TailoredSummary } from ".";
@@ -75,7 +78,7 @@ export const ReadyPanel: React.FC<ReadyPanelProps> = ({
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [isEditDetailsOpen, setIsEditDetailsOpen] = useState(false);
   const { isRescoring, rescoreJob } = useRescoreJob(onJobUpdated);
-  const [catalog, setCatalog] = useState<ResumeProjectCatalogItem[]>([]);
+  const { data: catalog = [] } = useQueryResumeProjectCatalogFindAll();
   const [recentlyApplied, setRecentlyApplied] = useState<{
     jobId: string;
     jobTitle: string;
@@ -83,15 +86,13 @@ export const ReadyPanel: React.FC<ReadyPanelProps> = ({
     timeoutId: ReturnType<typeof setTimeout>;
   } | null>(null);
   const previousJobIdRef = useRef<string | null>(null);
-  const markAsAppliedMutation = useMarkAsAppliedMutation();
-  const skipJobMutation = useSkipJobMutation();
+  const mutationMarkAsApplied = useMutationJobMarkAsApplied();
+  const mutationSkipJob = useMutationJobSkip();
+  const mutationUpdateJob = useMutationJobUpdate();
+  const mutationGeneratePdf = useMutationJobGeneratePdf();
+  const mutationCheckSponsor = useMutationJobCheckSponsor();
 
   const { personName } = useProfile();
-
-  // Load project catalog once
-  useEffect(() => {
-    api.getResumeProjectsCatalog().then(setCatalog).catch(console.error);
-  }, []);
 
   // Reset mode when job changes
   useEffect(() => {
@@ -132,7 +133,10 @@ export const ReadyPanel: React.FC<ReadyPanelProps> = ({
     async (jobId: string) => {
       try {
         // Revert to ready status
-        await api.updateJob(jobId, { status: "ready" });
+        await mutationUpdateJob.mutateAsync({
+          id: jobId,
+          update: { status: "ready" },
+        });
         trackProductEvent("jobs_job_action_completed", {
           action: "move_to_ready",
           result: "success",
@@ -158,7 +162,7 @@ export const ReadyPanel: React.FC<ReadyPanelProps> = ({
         toast.error(message);
       }
     },
-    [onJobUpdated, recentlyApplied],
+    [onJobUpdated, recentlyApplied, mutationUpdateJob.mutateAsync],
   );
 
   // Handle mark as applied with undo capability
@@ -167,7 +171,7 @@ export const ReadyPanel: React.FC<ReadyPanelProps> = ({
 
     try {
       setIsMarkingApplied(true);
-      await markAsAppliedMutation.mutateAsync(job.id);
+      await mutationMarkAsApplied.mutateAsync(job.id);
       trackProductEvent("jobs_job_action_completed", {
         action: "mark_applied",
         result: "success",
@@ -212,14 +216,14 @@ export const ReadyPanel: React.FC<ReadyPanelProps> = ({
     } finally {
       setIsMarkingApplied(false);
     }
-  }, [job, markAsAppliedMutation, onJobMoved, onJobUpdated, handleUndoApplied]);
+  }, [job, mutationMarkAsApplied, onJobMoved, onJobUpdated, handleUndoApplied]);
 
   const handleRegenerate = useCallback(async () => {
     if (!job) return;
 
     try {
       setIsRegenerating(true);
-      await api.generateJobPdf(job.id);
+      await mutationGeneratePdf.mutateAsync(job.id);
       trackProductEvent("jobs_job_action_completed", {
         action: "generate_pdf",
         result: "success",
@@ -239,7 +243,7 @@ export const ReadyPanel: React.FC<ReadyPanelProps> = ({
     } finally {
       setIsRegenerating(false);
     }
-  }, [job, onJobUpdated]);
+  }, [job, onJobUpdated, mutationGeneratePdf.mutateAsync]);
 
   const handleRescore = useCallback(
     () => rescoreJob(job?.id),
@@ -250,7 +254,7 @@ export const ReadyPanel: React.FC<ReadyPanelProps> = ({
     if (!job) return;
 
     try {
-      await skipJobMutation.mutateAsync(job.id);
+      await mutationSkipJob.mutateAsync(job.id);
       trackProductEvent("jobs_job_action_completed", {
         action: "skip",
         result: "success",
@@ -270,7 +274,7 @@ export const ReadyPanel: React.FC<ReadyPanelProps> = ({
       const message = error instanceof Error ? error.message : "Failed to skip";
       toast.error(message);
     }
-  }, [job, onJobMoved, onJobUpdated, skipJobMutation]);
+  }, [job, onJobMoved, onJobUpdated, mutationSkipJob]);
 
   const handleCopyInfo = useCallback(async () => {
     if (!job) return;
@@ -290,7 +294,7 @@ export const ReadyPanel: React.FC<ReadyPanelProps> = ({
     if (!job) return;
     try {
       setIsRegenerating(true);
-      await api.generateJobPdf(job.id);
+      await mutationGeneratePdf.mutateAsync(job.id);
       trackProductEvent("jobs_job_action_completed", {
         action: "generate_pdf",
         result: "success",
@@ -311,7 +315,7 @@ export const ReadyPanel: React.FC<ReadyPanelProps> = ({
     } finally {
       setIsRegenerating(false);
     }
-  }, [job, onJobUpdated]);
+  }, [job, onJobUpdated, mutationGeneratePdf.mutateAsync]);
 
   // Empty state
   if (!job) {
@@ -351,7 +355,7 @@ export const ReadyPanel: React.FC<ReadyPanelProps> = ({
         className="pb-4 border-b border-border/40"
         onCheckSponsor={async () => {
           try {
-            await api.checkSponsor(job.id);
+            await mutationCheckSponsor.mutateAsync(job.id);
             trackProductEvent("jobs_job_action_completed", {
               action: "check_sponsor",
               result: "success",

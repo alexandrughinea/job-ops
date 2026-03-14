@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn, formatDate, sourceLabel } from "@/lib/utils";
 import { useSettings } from "../hooks/useSettings";
+import { CompanyButton } from "./CompanyButton";
 import {
   getJobStatusIndicator,
   getTracerStatusIndicator,
@@ -181,7 +182,7 @@ export const JobHeader: React.FC<JobHeaderProps> = ({
             {job.title}
           </Link>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>{job.employer}</span>
+            <CompanyButton companyName={job.employer} job={job} />
           </div>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">

@@ -16,6 +16,7 @@ import type {
   LlmServiceOptions,
   LlmValidationResult,
   ResponseMode,
+  ToolMessage,
 } from "./types";
 import { buildHeaders, getResponseDetail } from "./utils/http";
 import { parseJsonContent } from "./utils/json";
@@ -119,6 +120,136 @@ export class LlmService {
 
   getBaseUrl(): string {
     return this.baseUrl;
+  }
+
+  /**
+   * Call the LLM with tools. Runs an agent loop: if the model returns tool_calls,
+   * executes them and continues until the model returns content or maxToolRounds is reached.
+   * Returns the final messages (including tool results) for the caller to process.
+   */
+  async callWithTools(args: {
+    model: string;
+    messages: ToolMessage[];
+    tools: Array<{
+      type: "function";
+      function: {
+        name: string;
+        description: string;
+        parameters: Record<string, unknown>;
+      };
+    }>;
+    executeTool: (
+      name: string,
+      args: Record<string, unknown>,
+    ) => Promise<unknown>;
+    signal?: AbortSignal;
+    maxToolRounds?: number;
+  }): Promise<
+    | { success: true; messages: ToolMessage[] }
+    | { success: false; error: string }
+  > {
+    const { strategy } = this;
+    if (!strategy.buildRequestWithTools || !strategy.extractToolCalls) {
+      return {
+        success: false,
+        error: "Tool calling is not supported by this LLM provider",
+      };
+    }
+    if (this.strategy.requiresApiKey && !this.apiKey) {
+      return { success: false, error: "LLM API key not configured" };
+    }
+
+    const maxRounds = args.maxToolRounds ?? 5;
+    let messages: ToolMessage[] = [...args.messages];
+
+    for (let round = 0; round < maxRounds; round++) {
+      args.signal?.throwIfAborted();
+
+      const { url, headers, body } = strategy.buildRequestWithTools({
+        baseUrl: this.baseUrl,
+        apiKey: this.apiKey,
+        model: args.model,
+        messages,
+        tools: args.tools,
+      });
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        signal: args.signal,
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => "");
+        const err = new Error(
+          `LLM API error: ${response.status}${errorBody ? ` - ${truncate(errorBody, 200)}` : ""}`,
+        ) as LlmApiError;
+        err.status = response.status;
+        err.body = truncate(errorBody, 600);
+        throw err;
+      }
+
+      const data = (await response.json()) as Record<string, unknown>;
+      const toolCalls = strategy.extractToolCalls(data);
+      const content =
+        strategy.extractMessageContent?.(data) ?? strategy.extractText(data);
+
+      const choices = data?.choices as Array<{ message?: unknown }> | undefined;
+      const assistantMessage = choices?.[0]?.message as
+        | { role?: string; content?: string | null; tool_calls?: unknown[] }
+        | undefined;
+      const assistantToolCalls = assistantMessage?.tool_calls;
+
+      if (toolCalls && toolCalls.length > 0) {
+        messages = [
+          ...messages,
+          {
+            role: "assistant",
+            content: assistantMessage?.content ?? null,
+            tool_calls: assistantToolCalls as Array<{
+              id: string;
+              type: "function";
+              function: { name: string; arguments: string };
+            }>,
+          },
+        ];
+
+        for (const tc of toolCalls) {
+          let toolResult: unknown;
+          try {
+            const parsedArgs =
+              typeof tc.function.arguments === "string"
+                ? (JSON.parse(tc.function.arguments) as Record<string, unknown>)
+                : {};
+            toolResult = await args.executeTool(tc.function.name, parsedArgs);
+          } catch (err) {
+            toolResult = {
+              error: err instanceof Error ? err.message : String(err),
+            };
+          }
+          messages.push({
+            role: "tool",
+            content: JSON.stringify(toolResult),
+            tool_call_id: tc.id,
+          });
+        }
+        continue;
+      }
+
+      if (content && typeof content === "string" && content.trim()) {
+        messages = [
+          ...messages,
+          { role: "assistant", content: content.trim() },
+        ];
+      }
+      return { success: true, messages };
+    }
+
+    return {
+      success: false,
+      error: `Tool loop exceeded ${maxRounds} rounds`,
+    };
   }
 
   async validateCredentials(): Promise<LlmValidationResult> {

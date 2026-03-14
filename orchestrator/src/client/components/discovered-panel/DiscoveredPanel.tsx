@@ -1,5 +1,8 @@
-import * as api from "@client/api";
-import { useSkipJobMutation } from "@client/hooks/queries/useJobMutations";
+import {
+  useMutationJobCheckSponsor,
+  useMutationJobProcess,
+  useMutationJobSkip,
+} from "@client/hooks";
 import { useRescoreJob } from "@client/hooks/useRescoreJob";
 import type { Job } from "@shared/types.js";
 import type React from "react";
@@ -32,7 +35,9 @@ export const DiscoveredPanel: React.FC<DiscoveredPanelProps> = ({
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [isEditDetailsOpen, setIsEditDetailsOpen] = useState(false);
   const previousJobIdRef = useRef<string | null>(null);
-  const skipJobMutation = useSkipJobMutation();
+  const mutationSkipJob = useMutationJobSkip();
+  const mutationProcessJob = useMutationJobProcess();
+  const mutationCheckSponsor = useMutationJobCheckSponsor();
   const { isRescoring, rescoreJob } = useRescoreJob(onJobUpdated);
 
   useEffect(() => {
@@ -60,7 +65,7 @@ export const DiscoveredPanel: React.FC<DiscoveredPanelProps> = ({
     if (!job) return;
     try {
       setIsSkipping(true);
-      await skipJobMutation.mutateAsync(job.id);
+      await mutationSkipJob.mutateAsync(job.id);
       trackProductEvent("jobs_job_action_completed", {
         action: "skip",
         result: "success",
@@ -89,7 +94,7 @@ export const DiscoveredPanel: React.FC<DiscoveredPanelProps> = ({
     if (!job) return;
     try {
       setIsFinalizing(true);
-      await api.processJob(job.id);
+      await mutationProcessJob.mutateAsync(job.id);
       trackProductEvent("jobs_job_action_completed", {
         action: "process_job",
         result: "success",
@@ -141,7 +146,7 @@ export const DiscoveredPanel: React.FC<DiscoveredPanelProps> = ({
           onEditDetails={() => setIsEditDetailsOpen(true)}
           onCheckSponsor={async () => {
             try {
-              await api.checkSponsor(job.id);
+              await mutationCheckSponsor.mutateAsync(job.id);
               trackProductEvent("jobs_job_action_completed", {
                 action: "check_sponsor",
                 result: "success",

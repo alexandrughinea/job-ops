@@ -1,6 +1,15 @@
 import * as api from "@client/api";
 import { PageHeader } from "@client/components/layout";
-import { useUpdateSettingsMutation } from "@client/hooks/queries/useSettingsMutation";
+import {
+  useMutationBackupCreate,
+  useMutationBackupDelete,
+  useMutationDatabaseClear,
+  useMutationJobDeleteBelowScore,
+  useMutationJobDeleteByStatus,
+  useMutationSettingsUpdate,
+  useQueryBackupsFindAll,
+  useQuerySettingsFindCurrent,
+} from "@client/hooks";
 import { useRxResumeConfigState } from "@client/hooks/useRxResumeConfigState";
 import { useTracerReadiness } from "@client/hooks/useTracerReadiness";
 import {
@@ -39,7 +48,7 @@ import type {
   ResumeProjectsSettings,
   RxResumeMode,
 } from "@shared/types.js";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Settings } from "lucide-react";
 import type React from "react";
 import { useCallback, useEffect, useState } from "react";
@@ -83,6 +92,9 @@ const DEFAULT_FORM_VALUES: UpdateSettingsInput = {
   adzunaAppId: "",
   adzunaAppKey: "",
   webhookSecret: "",
+  gmailOauthClientId: "",
+  gmailOauthClientSecret: "",
+  gmailOauthRedirectUri: "",
   enableBasicAuth: false,
   profileSourceMode: null,
   backupEnabled: null,
@@ -140,6 +152,9 @@ const NULL_SETTINGS_PAYLOAD: UpdateSettingsInput = {
   adzunaAppKey: null,
   adzunaMaxJobsPerTerm: null,
   webhookSecret: null,
+  gmailOauthClientId: null,
+  gmailOauthClientSecret: null,
+  gmailOauthRedirectUri: null,
   enableBasicAuth: undefined,
   profileSourceMode: null,
   backupEnabled: null,
@@ -180,6 +195,9 @@ const mapSettingsToForm = (data: AppSettings): UpdateSettingsInput => ({
   adzunaAppId: data.adzunaAppId ?? "",
   adzunaAppKey: "",
   webhookSecret: "",
+  gmailOauthClientId: data.gmailOauthClientId ?? "",
+  gmailOauthClientSecret: "",
+  gmailOauthRedirectUri: data.gmailOauthRedirectUri ?? "",
   enableBasicAuth: data.basicAuthActive,
   profileSourceMode: data.profileSourceMode.override,
   backupEnabled: data.backupEnabled.override,
@@ -295,6 +313,8 @@ const getDerivedSettings = (settings: AppSettings | null) => {
         ukvisajobsEmail: settings?.ukvisajobsEmail ?? "",
         adzunaAppId: settings?.adzunaAppId ?? "",
         basicAuthUser: settings?.basicAuthUser ?? "",
+        gmailOauthClientId: settings?.gmailOauthClientId ?? "",
+        gmailOauthRedirectUri: settings?.gmailOauthRedirectUri ?? "",
       },
       private: {
         rxresumePasswordHint: settings?.rxresumePasswordHint ?? null,
@@ -302,6 +322,8 @@ const getDerivedSettings = (settings: AppSettings | null) => {
         adzunaAppKeyHint: settings?.adzunaAppKeyHint ?? null,
         basicAuthPasswordHint: settings?.basicAuthPasswordHint ?? null,
         webhookSecretHint: settings?.webhookSecretHint ?? null,
+        gmailOauthClientSecretHint:
+          settings?.gmailOauthClientSecretHint ?? null,
       },
       basicAuthActive: settings?.basicAuthActive ?? false,
     },
@@ -406,20 +428,19 @@ export const SettingsPage: React.FC = () => {
     syncBaseResumeIdsForMode,
   } = useRxResumeConfigState(settings);
 
-  const settingsQuery = useQuery({
-    queryKey: queryKeys.settings.current(),
-    queryFn: api.getSettings,
-  });
-  const backupsQuery = useQuery({
-    queryKey: queryKeys.backups.list(),
-    queryFn: api.getBackups,
-  });
-  const updateSettingsMutation = useUpdateSettingsMutation();
-  const isLoading = settingsQuery.isLoading;
-  const backups = backupsQuery.data?.backups ?? [];
-  const nextScheduled = backupsQuery.data?.nextScheduled ?? null;
-  const isLoadingBackups = backupsQuery.isLoading;
-  useQueryErrorToast(backupsQuery.error, "Failed to load backups");
+  const querySettingsResult = useQuerySettingsFindCurrent();
+  const queryBackupsResult = useQueryBackupsFindAll();
+  const updateSettingsMutation = useMutationSettingsUpdate();
+  const mutationBackupCreate = useMutationBackupCreate();
+  const mutationBackupDelete = useMutationBackupDelete();
+  const mutationDatabaseClear = useMutationDatabaseClear();
+  const mutationJobDeleteByStatus = useMutationJobDeleteByStatus();
+  const mutationJobDeleteBelowScore = useMutationJobDeleteBelowScore();
+  const isLoading = querySettingsResult.isLoading;
+  const backups = queryBackupsResult.data?.backups ?? [];
+  const nextScheduled = queryBackupsResult.data?.nextScheduled ?? null;
+  const isLoadingBackups = queryBackupsResult.isLoading;
+  useQueryErrorToast(queryBackupsResult.error, "Failed to load backups");
 
   const rxresumeMode = (settings?.rxresumeMode?.value ?? "v5") as RxResumeMode;
   const selectedRxresumeMode = (useWatch({
@@ -435,12 +456,12 @@ export const SettingsPage: React.FC = () => {
   );
 
   useEffect(() => {
-    if (!settingsQuery.data) return;
-    setSettings(settingsQuery.data);
-    reset(mapSettingsToForm(settingsQuery.data));
-  }, [settingsQuery.data, reset]);
+    if (!querySettingsResult.data) return;
+    setSettings(querySettingsResult.data);
+    reset(mapSettingsToForm(querySettingsResult.data));
+  }, [querySettingsResult.data, reset]);
 
-  useQueryErrorToast(settingsQuery.error, "Failed to load settings");
+  useQueryErrorToast(querySettingsResult.error, "Failed to load settings");
 
   useEffect(() => {
     if (!settings) return;
@@ -530,9 +551,8 @@ export const SettingsPage: React.FC = () => {
   const handleCreateBackup = async () => {
     setIsCreatingBackup(true);
     try {
-      await api.createManualBackup();
+      await mutationBackupCreate.mutateAsync();
       toast.success("Backup created successfully");
-      await queryClient.invalidateQueries({ queryKey: queryKeys.backups.all });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to create backup";
@@ -551,9 +571,8 @@ export const SettingsPage: React.FC = () => {
     }
     setIsDeletingBackup(true);
     try {
-      await api.deleteBackup(filename);
+      await mutationBackupDelete.mutateAsync(filename);
       toast.success("Backup deleted successfully");
-      await queryClient.invalidateQueries({ queryKey: queryKeys.backups.all });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to delete backup";
@@ -769,6 +788,26 @@ export const SettingsPage: React.FC = () => {
         if (value !== undefined) envPayload.webhookSecret = value;
       }
 
+      if (
+        dirtyFields.gmailOauthClientId ||
+        dirtyFields.gmailOauthClientSecret
+      ) {
+        envPayload.gmailOauthClientId = normalizeString(
+          data.gmailOauthClientId,
+        );
+      }
+
+      if (dirtyFields.gmailOauthClientSecret) {
+        const value = normalizePrivateInput(data.gmailOauthClientSecret);
+        if (value !== undefined) envPayload.gmailOauthClientSecret = value;
+      }
+
+      if (dirtyFields.gmailOauthRedirectUri) {
+        envPayload.gmailOauthRedirectUri = normalizeString(
+          data.gmailOauthRedirectUri,
+        );
+      }
+
       const payload: UpdateSettingsInput = {
         model: normalizeString(data.model),
         modelScorer: normalizeString(data.modelScorer),
@@ -838,7 +877,7 @@ export const SettingsPage: React.FC = () => {
   const handleClearDatabase = async () => {
     try {
       setIsSaving(true);
-      const result = await api.clearDatabase();
+      const result = await mutationDatabaseClear.mutateAsync();
       toast.success("Database cleared", {
         description: `Deleted ${result.jobsDeleted} jobs.`,
       });
@@ -862,7 +901,7 @@ export const SettingsPage: React.FC = () => {
       const results: string[] = [];
 
       for (const status of statusesToClear) {
-        const result = await api.deleteJobsByStatus(status);
+        const result = await mutationJobDeleteByStatus.mutateAsync(status);
         totalDeleted += result.count;
         if (result.count > 0) {
           results.push(`${result.count} ${status}`);
@@ -890,7 +929,7 @@ export const SettingsPage: React.FC = () => {
   const handleClearByScore = async (threshold: number) => {
     try {
       setIsSaving(true);
-      const result = await api.deleteJobsBelowScore(threshold);
+      const result = await mutationJobDeleteBelowScore.mutateAsync(threshold);
 
       if (result.count > 0) {
         toast.success("Jobs cleared", {

@@ -9,6 +9,8 @@ import type {
   ApplicationTask,
   AppSettings,
   BackupInfo,
+  CompanyIntel,
+  CompanyIntelResponse,
   DemoInfoResponse,
   Job,
   JobActionRequest,
@@ -1472,5 +1474,81 @@ export async function createManualBackup(): Promise<BackupInfo> {
 export async function deleteBackup(filename: string): Promise<void> {
   await fetchApi<void>(`/backups/${encodeURIComponent(filename)}`, {
     method: "DELETE",
+  });
+}
+
+// Company Intelligence API
+
+export interface CompanyIntelJobContext {
+  jobTitle?: string;
+  jobLocation?: string;
+  jobDescriptionSnippet?: string;
+  skills?: string;
+  companyIndustry?: string;
+  jobType?: string;
+  jobFunction?: string;
+}
+
+/** Minimal job shape for company intel. Pass any job-like object. */
+export interface CompanyIntelJobSource {
+  title?: string | null;
+  location?: string | null;
+  jobDescription?: string | null;
+  skills?: string | null;
+  companyIndustry?: string | null;
+  jobType?: string | null;
+  jobFunction?: string | null;
+}
+
+export function jobToCompanyIntelContext(
+  job: CompanyIntelJobSource | null | undefined,
+): CompanyIntelJobContext | undefined {
+  if (!job) return undefined;
+  const loc = job.location?.trim();
+  const desc = job.jobDescription?.trim();
+  const sk = job.skills?.trim();
+  const ind = job.companyIndustry?.trim();
+  const jt = job.jobType?.trim();
+  const jf = job.jobFunction?.trim();
+  const title = job.title?.trim();
+  if (!loc && !desc && !sk && !ind && !jt && !jf && !title) return undefined;
+  return {
+    jobTitle: title || undefined,
+    jobLocation: loc || undefined,
+    jobDescriptionSnippet: desc ? desc.slice(0, 500) : undefined,
+    skills: sk || undefined,
+    companyIndustry: ind || undefined,
+    jobType: jt || undefined,
+    jobFunction: jf || undefined,
+  };
+}
+
+export async function extractCompanyIntel(
+  companyName: string,
+  searchContext: string,
+  signal?: AbortSignal,
+  jobLocation?: string,
+  jobContext?: CompanyIntelJobContext | null,
+): Promise<{ intel: CompanyIntel }> {
+  return fetchApi<{ intel: CompanyIntel }>("/company-intel/extract", {
+    method: "POST",
+    signal,
+    body: JSON.stringify({
+      companyName,
+      searchContext,
+      jobLocation,
+      jobContext: jobContext ?? undefined,
+    }),
+  });
+}
+
+export async function lookupCompanyIntel(
+  companyName: string,
+  signal?: AbortSignal,
+): Promise<CompanyIntelResponse> {
+  return fetchApi<CompanyIntelResponse>("/company-intel", {
+    method: "POST",
+    body: JSON.stringify({ companyName }),
+    signal,
   });
 }

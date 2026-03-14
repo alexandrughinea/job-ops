@@ -3,12 +3,13 @@
  * Allows searching the government's list of licensed visa sponsors.
  */
 
-import type {
-  VisaSponsor,
-  VisaSponsorSearchResult,
-  VisaSponsorStatusResponse,
-} from "@shared/types.js";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutationVisaSponsorListUpdate,
+  useQueryVisaSponsorOrganizationFindByName,
+  useQueryVisaSponsorSearch,
+  useQueryVisaSponsorStatusFindCurrent,
+} from "@client/hooks";
+import type { VisaSponsorSearchResult } from "@shared/types.js";
 import {
   AlertCircle,
   Building2,
@@ -27,13 +28,11 @@ import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useQueryErrorToast } from "@/client/hooks/useQueryErrorToast";
-import { queryKeys } from "@/client/lib/queryKeys";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Drawer, DrawerClose, DrawerContent } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
 import { cn, formatDateTime } from "@/lib/utils";
-import * as api from "../api";
 import {
   DetailPanel,
   EmptyState,
@@ -59,13 +58,9 @@ const getScoreTokens = (score: number) => {
 };
 
 export const VisaSponsorsPage: React.FC = () => {
-  const queryClient = useQueryClient();
-  // State
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [selectedOrg, setSelectedOrg] = useState<string | null>(null);
-
-  // Loading states
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(() =>
     typeof window !== "undefined"
@@ -73,12 +68,9 @@ export const VisaSponsorsPage: React.FC = () => {
       : false,
   );
 
-  const statusQuery = useQuery<VisaSponsorStatusResponse>({
-    queryKey: queryKeys.visaSponsors.status(),
-    queryFn: api.getVisaSponsorStatus,
-  });
-  const status = statusQuery.data ?? null;
-  useQueryErrorToast(statusQuery.error, "Failed to fetch status");
+  const queryStatusResult = useQueryVisaSponsorStatusFindCurrent();
+  const status = queryStatusResult.data ?? null;
+  useQueryErrorToast(queryStatusResult.error, "Failed to fetch status");
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -87,39 +79,24 @@ export const VisaSponsorsPage: React.FC = () => {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  const searchQueryResult = useQuery({
-    queryKey: queryKeys.visaSponsors.search(
-      debouncedSearchQuery.trim(),
-      100,
-      20,
-    ),
-    queryFn: () =>
-      api.searchVisaSponsors({
-        query: debouncedSearchQuery.trim(),
-        limit: 100,
-        minScore: 20,
-      }),
-    enabled: Boolean(debouncedSearchQuery.trim()),
-  });
-  useQueryErrorToast(searchQueryResult.error, "Search failed");
+  const querySearch = useQueryVisaSponsorSearch(
+    debouncedSearchQuery.trim(),
+    100,
+    20,
+    Boolean(debouncedSearchQuery.trim()),
+  );
+  useQueryErrorToast(querySearch.error, "Search failed");
 
-  const orgDetailsQuery = useQuery<VisaSponsor[]>({
-    queryKey: queryKeys.visaSponsors.organization(selectedOrg ?? ""),
-    queryFn: () =>
-      selectedOrg
-        ? api.getVisaSponsorOrganization(selectedOrg)
-        : Promise.resolve([]),
-    enabled: Boolean(selectedOrg),
-  });
-  const orgDetails = orgDetailsQuery.data ?? [];
-  useQueryErrorToast(orgDetailsQuery.error, "Failed to fetch details");
+  const queryOrgDetails =
+    useQueryVisaSponsorOrganizationFindByName(selectedOrg);
+  const orgDetails = queryOrgDetails.data ?? [];
+  useQueryErrorToast(queryOrgDetails.error, "Failed to fetch details");
 
   const results = useMemo<VisaSponsorSearchResult[]>(() => {
     if (!debouncedSearchQuery.trim()) return [];
-    return searchQueryResult.data?.results ?? [];
-  }, [debouncedSearchQuery, searchQueryResult.data]);
+    return querySearch.data?.results ?? [];
+  }, [debouncedSearchQuery, querySearch.data]);
 
-  // Auto-select first result
   useEffect(() => {
     if (results.length === 0) {
       setSelectedOrg(null);
@@ -159,30 +136,16 @@ export const VisaSponsorsPage: React.FC = () => {
     }
   }, [isDesktop, isDetailDrawerOpen]);
 
-  // Trigger manual update
-  const updateListMutation = useMutation({
-    mutationFn: api.updateVisaSponsorList,
-    onSuccess: async (result) => {
-      queryClient.setQueryData(queryKeys.visaSponsors.status(), result.status);
-      if (debouncedSearchQuery.trim()) {
-        await queryClient.invalidateQueries({
-          queryKey: queryKeys.visaSponsors.search(
-            debouncedSearchQuery.trim(),
-            100,
-            20,
-          ),
-        });
-      }
-      toast.success(result.message);
-    },
-    onError: (error) => {
-      const message = error instanceof Error ? error.message : "Update failed";
-      toast.error(message);
-    },
-  });
+  const mutationUpdateList = useMutationVisaSponsorListUpdate();
 
   const handleUpdate = async () => {
-    await updateListMutation.mutateAsync();
+    try {
+      const result = await mutationUpdateList.mutateAsync();
+      toast.success(result.message);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Update failed";
+      toast.error(message);
+    }
   };
 
   const handleSelectOrg = (orgName: string) => {
@@ -198,10 +161,10 @@ export const VisaSponsorsPage: React.FC = () => {
     [results, selectedOrg],
   );
 
-  const isUpdateInProgress = updateListMutation.isPending || status?.isUpdating;
-  const isLoadingStatus = statusQuery.isLoading;
-  const isSearching = searchQueryResult.isFetching;
-  const isLoadingDetails = orgDetailsQuery.isLoading;
+  const isUpdateInProgress = mutationUpdateList.isPending || status?.isUpdating;
+  const isLoadingStatus = queryStatusResult.isLoading;
+  const isSearching = querySearch.isFetching;
+  const isLoadingDetails = queryOrgDetails.isLoading;
 
   const detailPanelContent = !selectedOrg ? (
     <div className="flex h-full flex-col items-center justify-center gap-2 text-center">

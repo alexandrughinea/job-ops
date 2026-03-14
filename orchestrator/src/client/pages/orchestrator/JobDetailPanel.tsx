@@ -1,4 +1,3 @@
-import * as api from "@client/api";
 import {
   DiscoveredPanel,
   FitAssessment,
@@ -9,9 +8,13 @@ import { JobDetailsEditDrawer } from "@client/components/JobDetailsEditDrawer";
 import { ReadyPanel } from "@client/components/ReadyPanel";
 import { TailoringEditor } from "@client/components/TailoringEditor";
 import {
-  useMarkAsAppliedMutation,
-  useSkipJobMutation,
-} from "@client/hooks/queries/useJobMutations";
+  useMutationJobCheckSponsor,
+  useMutationJobGeneratePdf,
+  useMutationJobMarkAsApplied,
+  useMutationJobProcess,
+  useMutationJobSkip,
+  useMutationJobUpdate,
+} from "@client/hooks";
 import { useProfile } from "@client/hooks/useProfile";
 import type { Job, JobListItem } from "@shared/types.js";
 import {
@@ -78,8 +81,12 @@ export const JobDetailPanel: React.FC<JobDetailPanelProps> = ({
   const [isEditDetailsOpen, setIsEditDetailsOpen] = useState(false);
   const saveTailoringRef = useRef<null | (() => Promise<void>)>(null);
   const previousSelectedJobIdRef = useRef<string | null>(null);
-  const markAsAppliedMutation = useMarkAsAppliedMutation();
-  const skipJobMutation = useSkipJobMutation();
+  const mutationMarkAsApplied = useMutationJobMarkAsApplied();
+  const mutationSkipJob = useMutationJobSkip();
+  const mutationUpdateJob = useMutationJobUpdate();
+  const mutationGeneratePdf = useMutationJobGeneratePdf();
+  const mutationProcessJob = useMutationJobProcess();
+  const mutationCheckSponsor = useMutationJobCheckSponsor();
 
   const { personName } = useProfile();
 
@@ -134,8 +141,9 @@ export const JobDetailPanel: React.FC<JobDetailPanelProps> = ({
     if (!selectedJob) return;
     try {
       setIsSavingDescription(true);
-      await api.updateJob(selectedJob.id, {
-        jobDescription: editedDescription,
+      await mutationUpdateJob.mutateAsync({
+        id: selectedJob.id,
+        update: { jobDescription: editedDescription },
       });
       toast.success("Job description updated");
       setIsEditingDescription(false);
@@ -174,8 +182,9 @@ export const JobDetailPanel: React.FC<JobDetailPanelProps> = ({
 
       try {
         if (pendingDescription && selectedJob) {
-          await api.updateJob(selectedJob.id, {
-            jobDescription: editedDescription,
+          await mutationUpdateJob.mutateAsync({
+            id: selectedJob.id,
+            update: { jobDescription: editedDescription },
           });
         }
 
@@ -201,6 +210,7 @@ export const JobDetailPanel: React.FC<JobDetailPanelProps> = ({
       hasUnsavedDescription,
       hasUnsavedTailoring,
       selectedJob,
+      mutationUpdateJob.mutateAsync,
     ],
   );
 
@@ -215,7 +225,7 @@ export const JobDetailPanel: React.FC<JobDetailPanelProps> = ({
       setProcessingJobId(selectedJob.id);
 
       if (selectedJob.status === "ready") {
-        await api.generateJobPdf(selectedJob.id);
+        await mutationGeneratePdf.mutateAsync(selectedJob.id);
         trackProductEvent("jobs_job_action_completed", {
           action: "generate_pdf",
           result: "success",
@@ -223,7 +233,7 @@ export const JobDetailPanel: React.FC<JobDetailPanelProps> = ({
         });
         toast.success("Resume regenerated successfully");
       } else {
-        await api.processJob(selectedJob.id);
+        await mutationProcessJob.mutateAsync(selectedJob.id);
         trackProductEvent("jobs_job_action_completed", {
           action: "process_job",
           result: "success",
@@ -251,7 +261,7 @@ export const JobDetailPanel: React.FC<JobDetailPanelProps> = ({
   const handleApply = async () => {
     if (!selectedJob) return;
     try {
-      await markAsAppliedMutation.mutateAsync(selectedJob.id);
+      await mutationMarkAsApplied.mutateAsync(selectedJob.id);
       trackProductEvent("jobs_job_action_completed", {
         action: "mark_applied",
         result: "success",
@@ -276,7 +286,7 @@ export const JobDetailPanel: React.FC<JobDetailPanelProps> = ({
   const handleSkip = async () => {
     if (!selectedJob) return;
     try {
-      await skipJobMutation.mutateAsync(selectedJob.id);
+      await mutationSkipJob.mutateAsync(selectedJob.id);
       trackProductEvent("jobs_job_action_completed", {
         action: "skip",
         result: "success",
@@ -301,7 +311,10 @@ export const JobDetailPanel: React.FC<JobDetailPanelProps> = ({
   const handleMoveToInProgress = async () => {
     if (!selectedJob) return;
     try {
-      await api.updateJob(selectedJob.id, { status: "in_progress" });
+      await mutationUpdateJob.mutateAsync({
+        id: selectedJob.id,
+        update: { status: "in_progress" },
+      });
       trackProductEvent("jobs_job_action_completed", {
         action: "move_in_progress",
         result: "success",
@@ -409,7 +422,7 @@ export const JobDetailPanel: React.FC<JobDetailPanelProps> = ({
         job={selectedJob}
         onCheckSponsor={async () => {
           try {
-            await api.checkSponsor(selectedJob.id);
+            await mutationCheckSponsor.mutateAsync(selectedJob.id);
             trackProductEvent("jobs_job_action_completed", {
               action: "check_sponsor",
               result: "success",

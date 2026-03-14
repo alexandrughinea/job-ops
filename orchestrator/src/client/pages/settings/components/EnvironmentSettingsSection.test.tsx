@@ -30,6 +30,8 @@ const EnvironmentSettingsHarness = () => {
               ukvisajobsEmail: "visa@example.com",
               adzunaAppId: "adzuna-id",
               basicAuthUser: "admin",
+              gmailOauthClientId: "",
+              gmailOauthRedirectUri: "",
             },
             private: {
               rxresumePasswordHint: null,
@@ -37,6 +39,7 @@ const EnvironmentSettingsHarness = () => {
               adzunaAppKeyHint: "adzu",
               basicAuthPasswordHint: "abcd",
               webhookSecretHint: "sec-",
+              gmailOauthClientSecretHint: null,
             },
             basicAuthActive: true,
           }}
